@@ -667,17 +667,40 @@ def mode_watch():
             draws = ask_number("Draws per pool per check? (default 2)", default=2)
             if draws == "QUIT":
                 continue
-            print(f"\n  Watching every {secs}s — memorable finds will BEEP. Ctrl+C to stop.\n")
+            autosave = ask_choice("Auto-save results to watch_log.csv?",
+                                  ["Yes, save each check", "No, just watch"])
+            if autosave == "QUIT":
+                continue
+            save_enabled = autosave and autosave.startswith("Yes")
+            print(f"\n  Watching every {secs}s — memorable finds will BEEP. Ctrl+C to stop.")
+            if save_enabled:
+                print(f"  Auto-saving to watch_log.csv")
+            print()
+            # baseline of numbers already known in the local dump
+            known = set(r["msisdn"] for r in ROWS) if ROWS else set()
             try:
                 while True:
                     now = datetime.now().strftime("%H:%M:%S")
                     print(f"[{now}] checking...", flush=True)
                     ranked = scan_memorable(draws=draws, limit=5, quiet=True)
-                    if ranked:
+                    # genuinely NEW = memorable + seen live but not in local dump
+                    new_finds = [(m, sc, p, pool) for m, (sc, p, pool) in ranked if m not in known]
+                    if save_enabled:
+                        with open("watch_log.csv", "a", encoding="utf-8-sig", newline="") as f:
+                            w = csv.writer(f)
+                            if f.tell() == 0:
+                                w.writerow(["timestamp", "msisdn", "score", "price", "pool", "new"])
+                            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            new_set = {f[0] for f in new_finds}
+                            for m, (sc, p, pool) in ranked:
+                                w.writerow([ts, m, sc, p, pool, "NEW" if m in new_set else ""])
+                    if new_finds:
                         beep()
-                        top = ranked[0][0]
-                        print(f"  🔔 MEMORABLE FOUND: {fmt_num(top)} (score {ranked[0][1][0]}) "
-                              f"{ranked[0][1][1]}฿")
+                        print(f"  🔔 NEW IN STOCK vs local dump ({len(new_finds)}):")
+                        for m, sc, p, pool in new_finds:
+                            print(f"     {fmt_num(m)}  score {sc}  {p}฿  {POOL_NAMES.get(pool, pool)}")
+                    elif ranked:
+                        print(f"  ({len(ranked)} memorable seen, all already in local dump)")
                     time.sleep(secs)
             except KeyboardInterrupt:
                 print("\n  stopped")
