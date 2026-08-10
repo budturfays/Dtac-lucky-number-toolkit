@@ -672,7 +672,19 @@ def mode_watch():
             if autosave == "QUIT":
                 continue
             save_enabled = autosave and autosave.startswith("Yes")
-            print(f"\n  Watching every {secs}s — memorable finds will BEEP. Ctrl+C to stop.")
+            report = ask_choice("What to show each check?",
+                                ["Only NEW numbers (not in local dump)",
+                                 "ALL memorable found (top 10)"])
+            if report == "QUIT":
+                continue
+            show_all = report and report.startswith("ALL")
+            min_score = ask_number(
+                "Minimum memorable score? (default 10 = quads/tongs/sequences; "
+                "8 = more results; 14 = only the rarest)", default=10)
+            if min_score == "QUIT":
+                continue
+            print(f"\n  Watching every {secs}s (memorable score >= {min_score}) — "
+                  f"finds will BEEP. Ctrl+C to stop.")
             if save_enabled:
                 print(f"  Auto-saving to watch_log.csv")
             print()
@@ -682,7 +694,7 @@ def mode_watch():
                 while True:
                     now = datetime.now().strftime("%H:%M:%S")
                     print(f"[{now}] checking...", flush=True)
-                    ranked = scan_memorable(draws=draws, limit=5, quiet=True)
+                    ranked = scan_memorable(draws=draws, min_score=min_score, limit=5, quiet=True)
                     # genuinely NEW = memorable + seen live but not in local dump
                     new_finds = [(m, sc, p, pool) for m, (sc, p, pool) in ranked if m not in known]
                     if save_enabled:
@@ -694,7 +706,18 @@ def mode_watch():
                             new_set = {f[0] for f in new_finds}
                             for m, (sc, p, pool) in ranked:
                                 w.writerow([ts, m, sc, p, pool, "NEW" if m in new_set else ""])
-                    if new_finds:
+                    if show_all:
+                        if ranked:
+                            print(f"  memorable seen: {len(ranked)} "
+                                  f"(new vs dump: {len(new_finds)})")
+                            for m, (sc, p, pool) in ranked[:10]:
+                                tag = " 🔔NEW" if m in {f[0] for f in new_finds} else ""
+                                print(f"    {fmt_num(m)}  score {sc}  {p}฿  {POOL_NAMES.get(pool, pool)}{tag}")
+                            if new_finds:
+                                beep()
+                        else:
+                            print(f"  (no memorable in this sample)")
+                    elif new_finds:
                         beep()
                         print(f"  🔔 NEW IN STOCK vs local dump ({len(new_finds)}):")
                         for m, sc, p, pool in new_finds:
