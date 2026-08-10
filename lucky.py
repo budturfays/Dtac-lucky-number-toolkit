@@ -322,6 +322,18 @@ def sort_rows(rows, sort):
         return sorted(rows, key=key)
     if sort == "memorable":
         return sorted(rows, key=lambda r: memorable_score(r["msisdn"]), reverse=True)
+    if sort == "rare_mem":
+        # both rare structure AND memorable: require memorable > 0, then
+        # score = memorable * (how rare the structure is)
+        _ensure_rarity()
+        def key(r):
+            mem = memorable_score(r["msisdn"])
+            if mem <= 0:
+                return (0, 0)
+            st = _raw_struct(r["msisdn"])
+            rare = STRUCT_RARITY.get(st, 10 ** 9) if st else 10 ** 9
+            return (mem / rare, mem)
+        return sorted(rows, key=key, reverse=True)
     if sort == "value":
         return sorted(rows, key=lambda r: (sum(star_tuple(r)) / max(int(r["price_baht_month"] or 1), 1),
                                            sum(star_tuple(r))), reverse=True)
@@ -382,11 +394,13 @@ def mode_repeats():
         return
     sort = ask_choice("How to sort?",
                       ["Richest repeats first", "RAREST structures first",
-                       "Most memorable first", "Best value (stars/baht)"])
+                       "Most memorable first", "Rare AND memorable (best combo)",
+                       "Best value (stars/baht)"])
     if sort == "QUIT":
         return
     sort_key = {"Richest repeats first": "repeat", "RAREST structures first": "rarity",
-                "Most memorable first": "memorable", "Best value (stars/baht)": "value"}[sort]
+                "Most memorable first": "memorable", "Rare AND memorable (best combo)": "rare_mem",
+                "Best value (stars/baht)": "value"}[sort]
     rows = apply_filters(ROWS, {"minrun": minrun, "ends": ending or None})
     show_results(rows, f"repeat >= {minrun}" + (f", ends {ending}" if ending else ""), n, sort_key)
 
