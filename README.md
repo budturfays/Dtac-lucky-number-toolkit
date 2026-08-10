@@ -1,4 +1,4 @@
-# Lucky Number Toolkit
+# Mobile Phone Lucky searching Number Toolkit (Thai)
 
 Search, watch, and track Thai lucky numbers from True-dtac's online store
 (`store.true.th`), right from your terminal.
@@ -24,7 +24,7 @@ One tool (`lucky.py`) provides:
 python lucky.py
 ```
 
-That's it — everything is under one menu.
+That's it, everything is under one menu.
 
 ## Data
 
