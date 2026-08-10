@@ -1,0 +1,14 @@
+# data files (large snapshots — generate with lucky.py > Update dataset)
+all_numbers.csv
+numbers_*.csv
+numbers_prices.csv
+watch_snapshot.json
+
+# your personal numbers (keep private)
+my_numbers.csv
+watchlist.txt
+
+# scratch
+*.csv.tmp
+found_*.csv
+__pycache__/
