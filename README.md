@@ -1,4 +1,4 @@
-# Mobile Phone Lucky searching Number Toolkit (Thai)
+# Mobile Phone Lucky Number searching Toolkit (Thai)
 
 Search, watch, and track Thai lucky numbers from True-dtac's online store
 (`store.true.th`), right from your terminal.
