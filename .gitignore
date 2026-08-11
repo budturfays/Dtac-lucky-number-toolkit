@@ -13,6 +13,11 @@ watchlist.txt
 found_*.csv
 __pycache__/
 
+# Vercel local project links + pull-generated env (project-specific, must not
+# be committed — a stale committed link could target the wrong project)
+webapp/.vercel/
+vercel-fn/.vercel/
+
 # buy bridge / worker runtime state (local only)
 buy_queue.txt
 buy_processed.log

@@ -10,6 +10,8 @@ project link) silently produces a static build with NO serverless function,
 which breaks /api/buy (the earlier 404 incident).
 
 This guard verifies the target project matches the directory before deploy.
+VERCEL_BIN (optional) overrides the vercel command, e.g.
+  VERCEL_BIN="npx --yes vercel@58" python deploy_guard.py webapp --prebuilt
 
 Usage (from repo root):
   python deploy_guard.py webapp            # deploys webapp -> lucky-number-web
@@ -18,6 +20,8 @@ Usage (from repo root):
 """
 import json
 import os
+import shlex
+import shutil
 import subprocess
 import sys
 
@@ -37,7 +41,7 @@ def read_project_link(directory):
         return None
     with open(pj, encoding="utf-8") as f:
         data = json.load(f)
-    return data.get("projectId") or data.get("orgId")
+    return data.get("projectId")
 
 
 def main():
@@ -69,7 +73,14 @@ def main():
 
     print(f"[guard] OK: deploying {directory} -> {name}")
     extra = args[1:]
-    cmd = ["vercel", "deploy", "--prod", "--yes"] + extra
+    # Allow CI to pin the vercel binary (e.g. VERCEL_BIN="npx --yes vercel@58").
+    vercel_bin = shlex.split(os.environ.get("VERCEL_BIN", "vercel"))
+    cmd = vercel_bin + ["deploy", "--prod", "--yes"] + extra
+    # Windows npm shims are .cmd files, which CreateProcess can't run directly.
+    first = shutil.which(cmd[0]) or cmd[0]
+    if first.lower().endswith((".cmd", ".bat")):
+        comspec = os.environ.get("COMSPEC", "cmd.exe")
+        cmd = [comspec, "/c", first] + cmd[1:]
     rc = subprocess.call(cmd, cwd=os.path.join(REPO, directory))
     sys.exit(rc)
 

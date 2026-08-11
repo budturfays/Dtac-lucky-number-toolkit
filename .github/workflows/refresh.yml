@@ -50,6 +50,24 @@ jobs:
           VERCEL_PROJECT_ID: prj_TXjIz88GHbYRw85KSKtaX3vdLzVA
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
+      # Guard: confirm the .vercel link created by `vercel pull` points at the
+      # WEBAPP project (prj_TXjIz...). If it ever points elsewhere, the build
+      # below would silently produce a static-only deploy for the wrong project
+      # and clobber /api/buy on lucky-number-buy. Fail fast instead.
+      - name: Verify webapp project link
+        run: |
+          python - <<'PY'
+          import json
+          d = json.load(open(".vercel/project.json", encoding="utf-8"))
+          expected = "prj_TXjIz88GHbYRw85KSKtaX3vdLzVA"
+          got = d.get("projectId")
+          assert got == expected, (
+              f"WRONG PROJECT LINK: .vercel/project.json points at {got!r}, "
+              f"expected webapp {expected!r}. Refusing to build/deploy."
+          )
+          print("webapp project link OK ->", d.get("projectName"))
+          PY
+
       - name: Build for Vercel
         run: npx --yes vercel@58 build --prod --yes
         env:
@@ -57,16 +75,20 @@ jobs:
           VERCEL_PROJECT_ID: prj_TXjIz88GHbYRw85KSKtaX3vdLzVA
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
-      # 4) Deploy to Vercel Hosting (production)
+      # 4) Deploy to Vercel Hosting (production) via deploy_guard.py, which
+      #    re-verifies the webapp/.vercel link points at lucky-number-web
+      #    before running `vercel deploy`, so a cross-project clobber of
+      #    lucky-number-buy is impossible even if the link goes stale.
       #    Requires a VERCEL_TOKEN secret: Vercel -> Account Settings -> Tokens
       #    -> Create Token (no expiry), then add it as a repo secret named
       #    VERCEL_TOKEN (Settings -> Secrets and variables -> Actions).
-      - name: Deploy to Vercel (production)
-        run: npx --yes vercel@58 deploy --prebuilt --prod --yes
+      - name: Deploy to Vercel (production, guarded)
+        run: python ../deploy_guard.py webapp --prebuilt
         env:
           VERCEL_ORG_ID: team_nRdGzntRZAxuwv1ZxDUybLd3
           VERCEL_PROJECT_ID: prj_TXjIz88GHbYRw85KSKtaX3vdLzVA
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_BIN: npx --yes vercel@58
 
       # 5) Post-deploy health checks — fail the run loudly if the site or the
       #    buy function isn't serving correctly (e.g. a stray deploy clobbered
