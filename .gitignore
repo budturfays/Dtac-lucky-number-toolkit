@@ -12,3 +12,9 @@ watchlist.txt
 *.csv.tmp
 found_*.csv
 __pycache__/
+
+# buy bridge / worker runtime state (local only)
+buy_queue.txt
+buy_processed.log
+buy_worker.log
+buy_worker.lock

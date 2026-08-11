@@ -126,8 +126,22 @@ const POOL_PAGES = {
 
 function buyUrl(n) {
   const pools = (n.pools || n.pool || "universal").split(",");
-  const pool = pools.find(p => POOL_PAGES[p]) || "universal";
-  return POOL_PAGES[pool];
+  let pool = pools.find(p => POOL_PAGES[p] || POOL_PAGES[p.split("-")[0]]);
+  if (!pool) return POOL_PAGES.universal;
+  return POOL_PAGES[pool] ? POOL_PAGES[pool] : POOL_PAGES[pool.split("-")[0]];
+}
+
+// ── local buy bridge (auto-buy in the background on this PC) ───────────────
+// The web app is a static site; the actual buying is done by buy_bridge.py +
+// buy_worker.py running on the user's machine. If the bridge is not running,
+// the buy button falls back to opening the listing page in a new tab.
+const BRIDGE_URL = "http://localhost:8765";
+
+function bridgeFetch(path, options = {}) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 2000);
+  return fetch(`${BRIDGE_URL}${path}`, { ...options, signal: ctrl.signal })
+    .finally(() => clearTimeout(timer));
 }
 
 // ── components ──────────────────────────────────────────────────────────────
@@ -143,6 +157,47 @@ function App() {
   const [notice, setNotice] = useState(null);
   const [randomPick, setRandomPick] = useState(null);
   const [live, setLive] = useState(null);
+  const [bridge, setBridge] = useState("checking"); // checking | up | down
+
+  // probe the local buy bridge (for the status pill + auto-buy button behavior)
+  useEffect(() => {
+    let cancelled = false;
+    const probe = async () => {
+      try {
+        const r = await bridgeFetch("/health");
+        if (!cancelled) setBridge(r.ok ? "up" : "down");
+      } catch (e) {
+        if (!cancelled) setBridge("down");
+      }
+    };
+    probe();
+    const timer = setInterval(probe, 10000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
+
+  // buy click: POST to the local bridge so buy_worker.py auto-selects the
+  // number in a browser. Fallback: open the listing page in a new tab.
+  const handleBuy = useCallback((e, row) => {
+    const msisdn = row?.msisdn;
+    if (!msisdn) return;
+    if (bridge !== "up") return; // let the <a href> open the listing tab as before
+    if (e) e.preventDefault();
+    // open the fallback tab synchronously (popup blockers forbid async window.open)
+    const win = window.open(buyUrl(row), "_blank", "noopener");
+    bridgeFetch("/buy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ msisdn }),
+    })
+      .then(async r => {
+        if (!r.ok) throw new Error(`bridge ${r.status}`);
+        try { win && win.close(); } catch (_) { /* ignore */ }
+        setNotice(`⏳ กำลังประมวลผลซื้อเบอร์อัตโนมัติ (ดูเบราว์เซอร์) — ${fmtNum(msisdn)}`);
+      })
+      .catch(() => {
+        setNotice("บริดจ์ไม่ทำงาน — เปิดหน้าเบอร์แทน (รัน python buy_bridge.py บนเครื่องนี้)");
+      });
+  }, [bridge]);
 
   // subscribe to live inventory data (RTDB)
   useEffect(() => {
@@ -257,8 +312,22 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>เบอร์มงคล Finder</h1>
-        <span className="sub">ค้นหาเบอร์มงคล • บันทึกเบอร์โปรดอัตโนมัติในเบราว์เซอร์</span>
+        <div>
+          <h1>เบอร์มงคล Finder</h1>
+          <span className="sub">ค้นหาเบอร์มงคล • บันทึกเบอร์โปรดอัตโนมัติในเบราว์เซอร์</span>
+        </div>
+        <span
+          className={`bridge ${bridge}`}
+          title={bridge === "up"
+            ? "ซื้ออัตโนมัติพร้อมใช้งาน (บริดจ์บนเครื่องนี้)"
+            : bridge === "down"
+              ? "บริดจ์ออฟไลน์ — ปุ่มซื้อจะเปิดแท็บตามปกติ"
+              : "กำลังตรวจสอบบริดจ์..."}
+        >
+          {bridge === "up" ? "⚡ ซื้ออัตโนมัติ: พร้อม"
+            : bridge === "down" ? "ซื้ออัตโนมัติ: ปิด"
+            : "ตรวจสอบ..."}
+        </span>
       </header>
 
       {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
@@ -370,7 +439,7 @@ function App() {
           {randomPick && (
             <section className="card random-card">
               🎲 <span className="num big">{fmtNum(randomPick.msisdn)}</span> — {randomPick.price_baht_month}฿/เดือน
-              <button onClick={() => window.open(buyUrl(randomPick), "_blank")}>เปิดหน้าเบอร์</button>
+              <button onClick={e => handleBuy(e, randomPick)}>ซื้อ</button>
             </section>
           )}
 
@@ -396,7 +465,18 @@ function App() {
                     <td className="runs">{runsOf(r.msisdn) || "-"}</td>
                     <td>{memorableScore(r.msisdn) > 0 ? "⭐".repeat(Math.min(3, Math.ceil(memorableScore(r.msisdn)/5))) : ""}</td>
                     <td>
-                      <a className="buy" href={buyUrl(r)} target="_blank" rel="noreferrer" title="เปิดหน้าเบอร์">เปิด</a>
+                      <a
+                        className="buy"
+                        href={buyUrl(r)}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={bridge === "up"
+                          ? "ซื้ออัตโนมัติผ่านเครื่องนี้ (ประมวลผลในเบราว์เซอร์)"
+                          : "เปิดหน้าเบอร์"}
+                        onClick={e => handleBuy(e, r)}
+                      >
+                        ซื้อ
+                      </a>
                     </td>
                     <td>
                       <button

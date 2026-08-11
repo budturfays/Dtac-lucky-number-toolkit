@@ -60,8 +60,8 @@ def load(path):
 
 
 def load_all():
-    """Store numbers + my numbers, merged, deduped."""
-    global DATA_PATH
+    """Store numbers + my numbers, merged, deduped. Updates the global ROWS."""
+    global DATA_PATH, ROWS
     DATA_PATH = find_datafile()
     if DATA_PATH:
         rows = load(DATA_PATH)
@@ -75,6 +75,7 @@ def load_all():
                 r.setdefault("grade", "mine")
                 rows.append(r)
                 seen.add(r["msisdn"])
+    ROWS = rows
     return rows
 
 
@@ -607,8 +608,8 @@ def open_in_browser(msisdn):
             for i in range(9):
                 boxes.nth(i + 1).fill(digits[i])
             page.wait_for_timeout(500)
-            # click search
-            page.locator("button", has_text="ค้นหาเบอร์").first.click()
+            # click search (exact text: other "ค้นหาเบอร์ฟันธง..." are CTA links)
+            page.get_by_role("button", name="ค้นหาเบอร์", exact=True).first.click()
             # wait for result cards to appear
             try:
                 page.wait_for_selector(".number-card", timeout=20000)
@@ -707,8 +708,13 @@ def guess_pool(msisdn):
         if r["msisdn"] == msisdn:
             pools = (r.get("pools") or r.get("pool") or "").split(",")
             for p in pools:
+                p = p.strip()
                 if p in POOLS:
                     return p
+                # tags like "rahu-AAAA" carry a grade suffix
+                base = p.split("-", 1)[0]
+                if base in POOLS:
+                    return base
     return "universal"
 
 
