@@ -360,6 +360,27 @@ def show_results(rows, title="results", how_many=10, sort="repeat"):
     save = ask_text(f"Save these {len(rows)} to a CSV? (Enter to skip)")
     if save and save != "QUIT":
         save_rows(rows, save)
+    print("  Select one to open in browser for purchase?")
+    buy = ask_choice("", ["No, done", "Pick a number (type it)", "Pick from the list above"])
+    if buy == "QUIT":
+        return rows
+    if buy == "Pick a number (type it)":
+        num = ask_text("Number:")
+        if num == "QUIT":
+            return rows
+        num = num.replace(" ", "").replace("-", "")
+        if num.isdigit() and len(num) == 10:
+            open_in_browser(num)
+        else:
+            print("  not a valid 10-digit number")
+    elif buy == "Pick from the list above":
+        shown2 = rows[:how_many]
+        print("  Pick 1-{}:".format(len(shown2)))
+        for i, r in enumerate(shown2, 1):
+            print(f"    {i}. {fmt_num(r['msisdn'])}  {r['price_baht_month'] or '-'}฿")
+        idx = ask_number("  Number:", default=None)
+        if idx not in ("QUIT", None) and 1 <= idx <= len(shown2):
+            open_in_browser(shown2[idx - 1]["msisdn"])
     return rows
 
 
