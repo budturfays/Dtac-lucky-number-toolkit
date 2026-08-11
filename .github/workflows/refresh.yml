@@ -67,3 +67,23 @@ jobs:
           VERCEL_ORG_ID: team_nRdGzntRZAxuwv1ZxDUybLd3
           VERCEL_PROJECT_ID: prj_TXjIz88GHbYRw85KSKtaX3vdLzVA
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      # 5) Post-deploy health checks — fail the run loudly if the site or the
+      #    buy function isn't serving correctly (e.g. a stray deploy clobbered
+      #    /api/buy with a static-only build).
+      - name: Health-check site
+        run: |
+          code=$(curl -s -o /tmp/site.html -w "%{http_code}" \
+            https://lucky-number-web-lac.vercel.app/)
+          echo "site status: $code"
+          [ "$code" = "200" ] || { echo "SITE FAILED"; exit 1; }
+          grep -q 'id="root"' /tmp/site.html || { echo "SITE MISSING ROOT"; exit 1; }
+
+      - name: Health-check buy function
+        run: |
+          body=$(curl -s -w "\n%{http_code}" \
+            https://lucky-number-buy.vercel.app/api/buy)
+          code=$(echo "$body" | tail -n1)
+          echo "buy fn status: $code"
+          echo "$body" | grep -q '"ok":true' || { echo "BUY FN FAILED"; exit 1; }
+          [ "$code" = "200" ] || { echo "BUY FN FAILED"; exit 1; }
