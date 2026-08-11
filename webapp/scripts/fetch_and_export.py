@@ -120,6 +120,18 @@ def main():
     size_mb = os.path.getsize(out) / 1e6
     print(f"Wrote {len(rows)} numbers -> {out} ({size_mb:.1f} MB)")
 
+    # companion meta so the web app's live bar can show the REAL timestamp of
+    # the served numbers.json (its file mtime right after writing).
+    # meta.json lives next to numbers.json so it is regenerated on every deploy.
+    meta_path = os.path.join(os.path.dirname(out), "meta.json")
+    lastmod = datetime.fromtimestamp(os.path.getmtime(out)).astimezone()
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {"lastmod": lastmod.isoformat(timespec="seconds"), "count": len(rows)},
+            f, separators=(",", ":"),
+        )
+    print(f"Wrote meta -> {meta_path} (lastmod={lastmod.isoformat(timespec='seconds')})")
+
 
 if __name__ == "__main__":
     main()

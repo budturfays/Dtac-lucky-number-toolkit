@@ -8,6 +8,7 @@ scripts/service-account.json
 
 # large generated data (rebuilt by export script / GitHub Actions)
 public/data/numbers.json
+public/data/meta.json
 
 # logs & scratch
 *.csv

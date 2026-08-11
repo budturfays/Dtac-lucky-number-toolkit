@@ -42,6 +42,15 @@ function fmtNum(m) {
   return m.length === 10 ? `${m.slice(0,3)} ${m.slice(3,6)} ${m.slice(6)}` : m;
 }
 
+// format the numbers.json file timestamp (from meta.json) for the live bar,
+// e.g. "2026-08-11 12:00:20" in the viewer's local time
+function fmtFileTime(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso || "...";
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 function runsOf(m) {
   const out = [];
   let i = 0;
@@ -214,6 +223,7 @@ function App() {
   const [notice, setNotice] = useState(null);
   const [randomPick, setRandomPick] = useState(null);
   const [live, setLive] = useState(null);
+  const [lastmod, setLastmod] = useState(null);
 
   // apply runtime SEO metadata once the app mounts
   useEffect(() => { applySeo(); }, []);
@@ -308,6 +318,11 @@ function App() {
         setNumbers(data);
         setLoadingData(false);
         setDataFetchedAt(new Date());
+        // fetch the file-level meta so the live bar shows the real data timestamp
+        fetch(`${import.meta.env.BASE_URL}data/meta.json?v=${ts}`)
+          .then(res => (res.ok ? res.json() : null))
+          .then(m => { if (m && m.lastmod && !cancelled) setLastmod(m.lastmod); })
+          .catch(() => { /* meta is optional; keep the previous lastmod */ });
         const rarity = {};
         for (const n of data) {
           const key = rawStruct(n.msisdn).join(",");
@@ -418,19 +433,19 @@ function App() {
 
       {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
 
-      {live && (
+      {(live || lastmod) && (
         <section className="livebar card">
           <div className="live-title">
-            <span className="live-dot" /> สด อัปเดต {live.updatedAt || "..."}
+            <span className="live-dot" /> สด อัปเดต {lastmod ? fmtFileTime(lastmod) : "..."}
           </div>
           <div className="live-pools">
-            {live.pools && Object.values(live.pools).map(p => (
+            {live?.pools && Object.values(live.pools).map(p => (
               <span key={p.name} className="pool-chip">
                 {p.name}: <b>{p.total != null ? p.total.toLocaleString() : "?"}</b>
               </span>
             ))}
           </div>
-          {live.memorable && live.memorable.length > 0 && (
+          {live?.memorable && live.memorable.length > 0 && (
             <div className="live-mem">
               <span className="live-mem-label">มีเบอร์เด็ดตอนนี้:</span>
               {live.memorable.slice(0, 5).map(m => (
