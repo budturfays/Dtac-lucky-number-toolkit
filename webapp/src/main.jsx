@@ -176,6 +176,15 @@ function buyUrl(n) {
   return POOL_PAGES[poolOf(n)] || POOL_PAGES.universal;
 }
 
+// Listing URL with the number's digits pre-filled into the search boxes via
+// ?specify=<9 digits> (True's site reads this and fills the position boxes).
+function buyUrlSpecify(n) {
+  const base = buyUrl(n);
+  const sep = base.includes("?") ? "&" : "?";
+  const digits = n.msisdn.slice(1); // drop leading 0 (box 0 is fixed)
+  return `${base}${sep}specify=${digits}`;
+}
+
 // ── cloud buy API (Vercel serverless function) ─────────────────────────────
 // Primary buy path: POST /api/buy on a Vercel function that reserves the
 // number directly with True's API (product-list exact lookup + select-number),
@@ -338,12 +347,15 @@ function App() {
             err.unavailable = data.error === "unavailable";
             throw err;
           }
-          setNotice(`✅ เลือกเบอร์ ${fmtNum(msisdn)} สำเร็จ — หน้าออฟเฟอร์เปิดแล้ว ทำรายการต่อได้เลย`);
-          // navigate the already-open tab to the offer page (number reserved)
-          if (data.offerUrl && tab && !tab.closed) {
-            try { tab.location.href = data.offerUrl; } catch (_) { window.open(data.offerUrl, "_blank", "noopener"); }
-          } else if (data.offerUrl) {
-            window.open(data.offerUrl, "_blank", "noopener");
+          setNotice(`✅ เลือกเบอร์ ${fmtNum(msisdn)} สำเร็จ — หมายเลขถูกกรอกแล้ว ค้นหาแล้วเลือกซิม/โปรโมชันต่อได้เลย`);
+          // navigate the already-open tab to the listing page with the digits
+          // pre-filled (?specify=...), so the number is VISIBLE in the boxes
+          // (True's offer page reads SPA state, so a bare offer URL shows empty).
+          const specifyUrl = buyUrlSpecify(row);
+          if (tab && !tab.closed) {
+            try { tab.location.href = specifyUrl; } catch (_) { window.open(specifyUrl, "_blank", "noopener"); }
+          } else {
+            window.open(specifyUrl, "_blank", "noopener");
           }
         });
     };
