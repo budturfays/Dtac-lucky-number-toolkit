@@ -377,7 +377,8 @@ def show_results(rows, title="results", how_many=10, sort="repeat"):
         shown2 = rows[:how_many]
         print("  Pick 1-{}:".format(len(shown2)))
         for i, r in enumerate(shown2, 1):
-            print(f"    {i}. {fmt_num(r['msisdn'])}  {r['price_baht_month'] or '-'}฿")
+            reps = runs_of(r["msisdn"]) or "-"
+            print(f"    {i}. {fmt_num(r['msisdn'])}  {r['price_baht_month'] or '-'}฿  ({reps})")
         idx = ask_number("  Number:", default=None)
         if idx not in ("QUIT", None) and 1 <= idx <= len(shown2):
             open_in_browser(shown2[idx - 1]["msisdn"])
