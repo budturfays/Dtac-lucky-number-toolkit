@@ -332,9 +332,11 @@ function App() {
     const pool = poolOf(row);
 
     // Open a tab IMMEDIATELY (user gesture) so the popup blocker can't kill it.
-    // Start on the listing page; if the cloud function reserves the number, the
-    // same tab is navigated to the offer URL. This gives instant feedback.
-    const tab = window.open(buyUrl(row), "_blank", "noopener");
+    // Use the ?specify= URL right away (digits are known from the row), so the
+    // number is pre-filled in True's search boxes the moment the tab loads —
+    // no async navigation needed. The cloud call then just reserves it.
+    const specifyUrl = buyUrlSpecify(row);
+    const tab = window.open(specifyUrl, "_blank");
 
     // cloud path: direct True API call reserves the number in ~1s
     const cloud = () => {
@@ -347,16 +349,7 @@ function App() {
             err.unavailable = data.error === "unavailable";
             throw err;
           }
-          setNotice(`✅ เลือกเบอร์ ${fmtNum(msisdn)} สำเร็จ — หมายเลขถูกกรอกแล้ว ค้นหาแล้วเลือกซิม/โปรโมชันต่อได้เลย`);
-          // navigate the already-open tab to the listing page with the digits
-          // pre-filled (?specify=...), so the number is VISIBLE in the boxes
-          // (True's offer page reads SPA state, so a bare offer URL shows empty).
-          const specifyUrl = buyUrlSpecify(row);
-          if (tab && !tab.closed) {
-            try { tab.location.href = specifyUrl; } catch (_) { window.open(specifyUrl, "_blank", "noopener"); }
-          } else {
-            window.open(specifyUrl, "_blank", "noopener");
-          }
+          setNotice(`✅ เลือกเบอร์ ${fmtNum(msisdn)} สำเร็จ — หมายเลขถูกจองแล้ว กรอกอยู่ในแท็บที่เปิดมาแล้ว ค้นหาแล้วเลือกซิม/โปรโมชันต่อได้เลย`);
         });
     };
 
