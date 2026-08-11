@@ -420,9 +420,15 @@ function App() {
         <div className="coffee-modal" onClick={() => setCoffeeOpen(false)}>
           <div className="card" onClick={e => e.stopPropagation()}>
             <h3>☕ ซื้อกาแฟให้ผู้พัฒนา</h3>
-            <div className="qr-placeholder">
-              [ QR พร้อมเพย์ ]<br />
-              ใส่ PromptPay ID ที่นี่
+            <img
+              className="qr-img"
+              src="https://promptpay.io/0869532969"
+              alt="PromptPay QR code 086-953-2969"
+              width={220}
+              height={220}
+            />
+            <div className="qr-number">
+              PromptPay: <b>086-953-2969</b>
             </div>
             <p>
               สแกน QR พร้อมเพย์ เพื่อส่งกำลังใจให้ผู้พัฒนา<br />
