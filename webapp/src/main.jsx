@@ -175,29 +175,36 @@ function App() {
     return () => { cancelled = true; clearInterval(timer); };
   }, []);
 
-  // buy click: POST to the local bridge so buy_worker.py auto-selects the
-  // number in a browser. Fallback: open the listing page in a new tab.
+  // buy click: POST to the local bridge so buy_worker.py injects the number
+  // in a hidden browser, lands on the offer page, then SHOWS the window for
+  // the user to pick SIM / promo / package manually.
   const handleBuy = useCallback((e, row) => {
     const msisdn = row?.msisdn;
     if (!msisdn) return;
-    if (bridge !== "up") return; // let the <a href> open the listing tab as before
     if (e) e.preventDefault();
-    // open the fallback tab synchronously (popup blockers forbid async window.open)
-    const win = window.open(buyUrl(row), "_blank", "noopener");
-    bridgeFetch("/buy", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ msisdn }),
-    })
-      .then(async r => {
-        if (!r.ok) throw new Error(`bridge ${r.status}`);
-        try { win && win.close(); } catch (_) { /* ignore */ }
-        setNotice(`⏳ กำลังประมวลผลซื้อเบอร์อัตโนมัติ (ดูเบราว์เซอร์) — ${fmtNum(msisdn)}`);
+    if (bridge === "up") {
+      bridgeFetch("/buy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ msisdn }),
       })
-      .catch(() => {
-        setNotice("บริดจ์ไม่ทำงาน — เปิดหน้าเบอร์แทน (รัน python buy_bridge.py บนเครื่องนี้)");
-      });
+        .then(async r => {
+          if (!r.ok) throw new Error(`bridge ${r.status}`);
+          setNotice(`⏳ กำลังกรอกเบอร์ ${fmtNum(msisdn)} ... หน้าต่างจะเปิดขึ้นเพื่อให้คุณเลือกซิม/โปรโมชันเอง`);
+        })
+        .catch(() => {
+          // bridge down → fall back to opening the listing page
+          window.open(buyUrl(row), "_blank", "noopener");
+          setNotice("บริดจ์ไม่ทำงาน — เปิดหน้าเบอร์แทน (รัน python buy_bridge.py บนเครื่องนี้)");
+        });
+    } else {
+      // no bridge → just open the listing page
+      window.open(buyUrl(row), "_blank", "noopener");
+    }
   }, [bridge]);
+
+  // buy-me-a-coffee: Thai modal with a PromptPay QR code
+  const [coffeeOpen, setCoffeeOpen] = useState(false);
 
   // subscribe to live inventory data (RTDB)
   useEffect(() => {
@@ -328,7 +335,25 @@ function App() {
             : bridge === "down" ? "ซื้ออัตโนมัติ: ปิด"
             : "ตรวจสอบ..."}
         </span>
+        <button className="coffee" onClick={() => setCoffeeOpen(true)} title="ซื้อกาแฟให้ผู้พัฒนา ☕">☕ ซื้อกาแฟให้</button>
       </header>
+
+      {coffeeOpen && (
+        <div className="coffee-modal" onClick={() => setCoffeeOpen(false)}>
+          <div className="card" onClick={e => e.stopPropagation()}>
+            <h3>☕ ซื้อกาแฟให้ผู้พัฒนา</h3>
+            <div className="qr-placeholder">
+              [ QR พร้อมเพย์ ]<br />
+              ใส่ PromptPay ID ที่นี่
+            </div>
+            <p>
+              สแกน QR พร้อมเพย์ เพื่อส่งกำลังใจให้ผู้พัฒนา<br />
+              ขอบคุณที่ใช้เบอร์มงคล Finder! 🙏
+            </p>
+            <button onClick={() => setCoffeeOpen(false)}>ปิด</button>
+          </div>
+        </div>
+      )}
 
       {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
 

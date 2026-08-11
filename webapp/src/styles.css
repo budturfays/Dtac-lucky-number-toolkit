@@ -89,6 +89,24 @@ a.buy {
   padding: 4px 9px; border-radius: 6px; white-space: nowrap;
 }
 a.buy:hover { background: #1d3a5f; }
+button.coffee {
+  background: #3a2a2a; color: #ffd7a8; border: 1px solid #6a4a3a;
+  padding: 7px 12px; border-radius: 8px; font-size: 13px; cursor: pointer;
+}
+button.coffee:hover { background: #4a3530; }
+.coffee-modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 20;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.coffee-modal .card {
+  max-width: 380px; width: 100%; text-align: center;
+}
+.coffee-modal .qr-placeholder {
+  width: 220px; height: 220px; margin: 12px auto; border: 2px dashed #555;
+  border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  color: #8a93b8; font-size: 13px; background: #fff;
+}
+.coffee-modal p { color: #b9c2e6; font-size: 14px; line-height: 1.6; }
 .livebar { border-color: #2a4a3a; background: #12241b; }
 .live-title { font-size: 13px; color: #7fe0a8; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; display: inline-block; animation: pulse 1.5s infinite; }

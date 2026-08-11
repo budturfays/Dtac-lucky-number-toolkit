@@ -308,24 +308,14 @@ def select_number(msisdn, headless=False, close_after=0, phase_done=None):
                     page.wait_for_timeout(5000)
                     if result:
                         _log.info("✅ SELECTED %s — browser on: %s", msisdn, page.url)
-                        # Complete the offer: dismiss popups, pick SIM, cheapest package
+                        # Hand off to the user on the offer page: dismiss popups
+                        # only, then LEAVE the window visible so the user picks
+                        # SIM type / promo / package themselves.
                         _dismiss_popups(page)
-                        page.wait_for_timeout(500)
-                        sim = _select_sim(page)
-                        _log.info("  SIM type: %s", sim)
-                        page.wait_for_timeout(800)
-                        price = _pick_cheapest_package(page)
-                        _log.info("  cheapest package: %s บาท", price)
-                        page.wait_for_timeout(6000)
-                        if page.url.endswith("/verify"):
-                            _log.info("  ✅ on /verify — terms ticked, ID field focused")
-                            ph = _check_terms_and_focus_id(page)
-                            _log.info("  ONLY remaining: enter national ID ('%s') + ยืนยัน",
-                                      ph or "เลขบัตรประชาชน")
-                        else:
-                            _log.info("  after package: %s", page.url)
-                        _log.info("Finish the checkout in that window; closing it "
-                                  "lets the worker move on.")
+                        _log.info("  Offer page ready — window is VISIBLE so you can "
+                                  "pick SIM type + promo + package yourself.")
+                        _log.info("  (Automation stopped here by design: promo/SIM/package "
+                                  "selection is manual.)")
                     else:
                         _log.error("card for %s not found (%d shown) — may be "
                                    "unavailable, select manually in the window",
