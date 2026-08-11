@@ -325,13 +325,12 @@ function App() {
   // buy click: try, in order — the Vercel cloud function (works from any
   // device), the local bridge (fast on this PC when env unset), then opening
   // the listing page as today.
-  const handleBuy = useCallback((e, row) => {
+  const handleBuy = useCallback((row) => {
     const msisdn = row?.msisdn;
     if (!msisdn) return;
-    // Do NOT preventDefault: the anchor's native target=_blank navigation to
-    // buyUrlSpecify(row) always opens the tab (popup blockers never block it),
-    // and the ?specify= digits pre-fill True's search boxes. We just fire the
-    // cloud reservation in the background and update the notice.
+    // Fired from onMouseDown (before navigation), so it NEVER cancels the
+    // anchor's native target=_blank open of buyUrlSpecify(row). It just fires
+    // the cloud reservation in the background and updates the notice.
     const pool = poolOf(row);
     setNotice(`⏳ กำลังจองเบอร์ ${fmtNum(msisdn)}... ใช้เวลาไม่กี่วินาที`);
     cloudBuy(msisdn, pool)
@@ -633,7 +632,7 @@ function App() {
           {randomPick && (
             <section className="card random-card">
               🎲 <span className="num big">{fmtNum(randomPick.msisdn)}</span> — {randomPick.price_baht_month}฿/เดือน
-              <button onClick={e => handleBuy(e, randomPick)}>ซื้อ</button>
+              <button onClick={() => handleBuy(randomPick)}>ซื้อ</button>
             </section>
           )}
 
@@ -673,7 +672,7 @@ function App() {
                         target="_blank"
                         rel="noreferrer"
                         title="ซื้อเบอร์นี้ (จองอัตโนมัติ + เปิดเบอร์ที่กรอกไว้)"
-                        onClick={e => handleBuy(e, r)}
+                        onMouseDown={() => handleBuy(r)}
                       >
                         ซื้อ
                       </a>
