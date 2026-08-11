@@ -368,7 +368,7 @@ function App() {
       {live && (
         <section className="livebar card">
           <div className="live-title">
-            <span className="live-dot" /> สดจากทรู — อัปเดต {live.updatedAt || "..."}
+            <span className="live-dot" /> สด อัปเดต {live.updatedAt || "..."}
           </div>
           <div className="live-pools">
             {live.pools && Object.values(live.pools).map(p => (
