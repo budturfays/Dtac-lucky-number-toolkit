@@ -99,8 +99,6 @@ button.coffee:hover { background: #4a3530; }
   width: 220px; height: 220px; margin: 12px auto; border-radius: 12px;
   background: #fff; display: block;
 }
-.coffee-modal .qr-number { color: #b9c2e6; font-size: 14px; margin-bottom: 8px; }
-.coffee-modal .qr-number b { color: #ffd700; letter-spacing: 1px; }
 .coffee-modal p { color: #b9c2e6; font-size: 14px; line-height: 1.6; }
 .livebar { border-color: #2a4a3a; background: #12241b; }
 .live-title { font-size: 13px; color: #7fe0a8; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }

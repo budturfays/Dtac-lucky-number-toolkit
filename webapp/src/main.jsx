@@ -5,7 +5,7 @@ import { db } from "./firebase.js";
 import "./styles.css";
 
 // ── SEO (runtime metadata; static tags live in index.html) ────────────────
-const SEO_TITLE = "เบอร์มงคล Finder – ค้นหาเบอร์สวยและเบอร์มงคล";
+const SEO_TITLE = "หาเบอร์มงคล – ค้นหาเบอร์สวยและเบอร์มงคล";
 const SEO_DESCRIPTION =
   "ค้นหาเบอร์มงคลและเบอร์สวยจากทรูและดีแทค ดูดวงเบอร์โทรศัพท์ วิเคราะห์เลขมงคล เบอร์ตอง เบอร์ 4 ตัวท้าย ราคาถูก อัปเดตสดทุกวัน";
 
@@ -402,7 +402,7 @@ function App() {
     <div className="app">
       <header className="header">
         <div>
-          <h1>เบอร์มงคล Finder</h1>
+          <h1>หาเบอร์มงคล</h1>
           <span className="sub">ค้นหาเบอร์มงคล • บันทึกเบอร์โปรดอัตโนมัติในเบราว์เซอร์</span>
         </div>
         <button className="coffee" onClick={() => setCoffeeOpen(true)} title="เลี้ยงกาแฟ">☕ เลี้ยงกาแฟ</button>
@@ -415,16 +415,13 @@ function App() {
             <img
               className="qr-img"
               src="https://promptpay.io/0869532969"
-              alt="PromptPay QR code 086-953-2969"
+              alt="PromptPay QR code"
               width={220}
               height={220}
             />
-            <div className="qr-number">
-              PromptPay: <b>086-953-2969</b>
-            </div>
             <p>
               สแกน QR พร้อมเพย์ เพื่อส่งกำลังใจให้ผู้พัฒนา<br />
-              ขอบคุณที่ใช้เบอร์มงคล Finder! 🙏
+              ขอบคุณที่ใช้หาเบอร์มงคล! 🙏
             </p>
             <button onClick={() => setCoffeeOpen(false)}>ปิด</button>
           </div>
