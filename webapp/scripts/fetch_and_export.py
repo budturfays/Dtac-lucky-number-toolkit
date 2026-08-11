@@ -22,9 +22,11 @@ from datetime import datetime
 
 BASE = "https://store.true.th/api"
 POOLS = ["universal", "rahu", "khanthep", "naga", "ajchang", "emperor"]
-# default draws per pool (coverage: universal 65k needs ~1000 for ~95%)
-DEFAULT_DRAWS = {"universal": 600, "rahu": 400, "khanthep": 300,
-                 "naga": 250, "ajchang": 400, "emperor": 60}
+# default draws per pool (kept moderate so a scheduled run finishes in ~3 min;
+# the API returns random samples, so this gives ~40-60% coverage per refresh,
+# and the app's static snapshot + periodic refreshes keep it reasonably current)
+DEFAULT_DRAWS = {"universal": 100, "rahu": 80, "khanthep": 60,
+                 "naga": 50, "ajchang": 80, "emperor": 30}
 
 
 def make_headers():
