@@ -18,7 +18,15 @@
  * Linux-only — on Vercel that's fine. For local runs set CHROMIUM_PATH to a
  * local Chromium (see README.md).
  */
-const chromium = require("@sparticuz/chromium");
+// @sparticuz/chromium >= 149 is ESM-only; load it lazily via dynamic import()
+// from this CommonJS module (plain require() throws ERR_REQUIRE_ESM).
+let _chromiumPromise;
+function loadChromium() {
+  if (!_chromiumPromise) {
+    _chromiumPromise = import("@sparticuz/chromium").then((m) => m.default || m);
+  }
+  return _chromiumPromise;
+}
 const { chromium: playwright } = require("playwright-core");
 
 // Mirror of buy_worker.py / lucky.py POOL_PAGES.
@@ -48,10 +56,12 @@ function cors(res) {
 async function resolveExecutable() {
   if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
   // Only call @sparticuz/chromium on Linux (Vercel). It throws on other OSes.
+  const chromium = await loadChromium();
   return chromium.executablePath();
 }
 
 async function launchBrowser() {
+  const chromium = await loadChromium();
   const executablePath = await resolveExecutable();
   return playwright.launch({
     args: chromium.args,

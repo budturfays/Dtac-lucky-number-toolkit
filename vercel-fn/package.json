@@ -4,7 +4,7 @@
   "private": true,
   "description": "Vercel serverless function: drives headless Chromium (playwright-core + @sparticuz/chromium) to auto-select a Thai lucky number on True's store, mirroring buy_worker.py",
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
   },
   "scripts": {
     "test:local": "node test_local.js"
