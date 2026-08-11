@@ -328,58 +328,27 @@ function App() {
   const handleBuy = useCallback((e, row) => {
     const msisdn = row?.msisdn;
     if (!msisdn) return;
-    if (e) e.preventDefault();
+    // Do NOT preventDefault: the anchor's native target=_blank navigation to
+    // buyUrlSpecify(row) always opens the tab (popup blockers never block it),
+    // and the ?specify= digits pre-fill True's search boxes. We just fire the
+    // cloud reservation in the background and update the notice.
     const pool = poolOf(row);
-
-    // Open a tab IMMEDIATELY (user gesture) so the popup blocker can't kill it.
-    // Use the ?specify= URL right away (digits are known from the row), so the
-    // number is pre-filled in True's search boxes the moment the tab loads —
-    // no async navigation needed. The cloud call then just reserves it.
-    const specifyUrl = buyUrlSpecify(row);
-    const tab = window.open(specifyUrl, "_blank");
-
-    // cloud path: direct True API call reserves the number in ~1s
-    const cloud = () => {
-      setNotice(`⏳ กำลังเลือกเบอร์ ${fmtNum(msisdn)}... ใช้เวลาไม่กี่วินาที`);
-      return cloudBuy(msisdn, pool)
-        .then(async r => {
-          const data = await r.json().catch(() => ({}));
-          if (!r.ok || !data.ok) {
-            const err = new Error(data.error || `cloud ${r.status}`);
-            err.unavailable = data.error === "unavailable";
-            throw err;
-          }
-          setNotice(`✅ เลือกเบอร์ ${fmtNum(msisdn)} สำเร็จ — หมายเลขถูกจองแล้ว กรอกอยู่ในแท็บที่เปิดมาแล้ว ค้นหาแล้วเลือกซิม/โปรโมชันต่อได้เลย`);
-        });
-    };
-
-    // local bridge path: buy_worker.py drives a browser on this PC
-    const bridge = () =>
-      bridgeFetch("/buy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ msisdn }),
-      }).then(async r => {
-        if (!r.ok) throw new Error(`bridge ${r.status}`);
-        setNotice(`⏳ กำลังกรอกเบอร์ ${fmtNum(msisdn)} ... หน้าต่างจะเปิดขึ้นเพื่อให้คุณเลือกซิม/โปรโมชันเอง`);
+    setNotice(`⏳ กำลังจองเบอร์ ${fmtNum(msisdn)}... ใช้เวลาไม่กี่วินาที`);
+    cloudBuy(msisdn, pool)
+      .then(async r => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || !data.ok) {
+          const err = new Error(data.error || `cloud ${r.status}`);
+          err.unavailable = data.error === "unavailable";
+          throw err;
+        }
+        setNotice(`✅ จองเบอร์ ${fmtNum(msisdn)} สำเร็จ — เบอร์ถูกกรอกไว้ในแท็บที่เปิดมาแล้ว ค้นหาแล้วเลือกซิม/โปรโมชันต่อได้เลย`);
+      })
+      .catch(err => {
+        setNotice(err && err.unavailable
+          ? `⚠️ เบอร์ ${fmtNum(msisdn)} ถูกจอง/ขายไปแล้ว — ยังเปิดหน้าเบอร์ไว้ให้`
+          : "⚠️ จองอัตโนมัติไม่สำเร็จ — แต่หน้าเบอร์เปิดไว้แล้ว (กรอกเลขรอค้นหาได้)");
       });
-
-    if (BUY_API_EXPLICIT) {
-      // explicit cloud URL → cloud only, listing page already open as fallback
-      cloud().catch(e => {
-        setNotice(e && e.unavailable
-          ? "⚠️ เบอร์นี้ถูกจอง/ขายไปแล้ว — เปิดหน้าเบอร์แทน (แท็บที่เปิดอยู่)"
-          : "❌ เซิร์ฟเวอร์ล้มเหลว — เปิดหน้าเบอร์แทน (แท็บที่เปิดอยู่)");
-      });
-    } else {
-      // env unset: prefer the local bridge (fast on this PC), then the default
-      // cloud function, then the listing page.
-      bridge()
-        .catch(() => cloud())
-        .catch(() => {
-          setNotice("บริดจ์และคลาวด์ไม่พร้อมใช้งาน — เปิดหน้าเบอร์แทน (แท็บที่เปิดอยู่)");
-        });
-    }
   }, []);
 
   // buy-me-a-coffee: Thai modal with a PromptPay QR code
@@ -700,10 +669,10 @@ function App() {
                     <td>
                       <a
                         className="buy"
-                        href={buyUrl(r)}
+                        href={buyUrlSpecify(r)}
                         target="_blank"
                         rel="noreferrer"
-                        title="ซื้อเบอร์นี้ (ลองซื้ออัตโนมัติก่อน แล้วค่อยเปิดหน้าเบอร์)"
+                        title="ซื้อเบอร์นี้ (จองอัตโนมัติ + เปิดเบอร์ที่กรอกไว้)"
                         onClick={e => handleBuy(e, r)}
                       >
                         ซื้อ
