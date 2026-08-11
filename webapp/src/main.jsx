@@ -177,17 +177,18 @@ function buyUrl(n) {
 }
 
 // ── cloud buy API (Vercel serverless function) ─────────────────────────────
-// Primary buy path: POST /api/buy on a Vercel function that drives headless
-// Chromium to auto-select the number on True's site (mirrors buy_worker.py).
-// Override the URL at build time with: VITE_BUY_API=https://<project>.vercel.app/api/buy
+// Primary buy path: POST /api/buy on a Vercel function that reserves the
+// number directly with True's API (product-list exact lookup + select-number),
+// no browser needed — takes ~1s. Override the URL at build time with:
+//   VITE_BUY_API=https://<project>.vercel.app/api/buy
 const DEFAULT_BUY_API = "https://lucky-number-buy.vercel.app/api/buy";
 const BUY_API = (import.meta.env.VITE_BUY_API || DEFAULT_BUY_API).replace(/\/+$/, "");
 const BUY_API_EXPLICIT = Boolean((import.meta.env.VITE_BUY_API || "").trim());
 
 function cloudBuy(msisdn, pool) {
   const ctrl = new AbortController();
-  // the browser flow takes ~15-45s — way beyond the local bridge's 2s probe
-  const timer = setTimeout(() => ctrl.abort(), 80000);
+  // the API flow takes ~1s — generous 15s cap
+  const timer = setTimeout(() => ctrl.abort(), 15000);
   return fetch(BUY_API, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -326,13 +327,17 @@ function App() {
     // same tab is navigated to the offer URL. This gives instant feedback.
     const tab = window.open(buyUrl(row), "_blank", "noopener");
 
-    // cloud path: headless Chromium on Vercel selects the number on True's site
+    // cloud path: direct True API call reserves the number in ~1s
     const cloud = () => {
-      setNotice(`⏳ กำลังเลือกเบอร์ ${fmtNum(msisdn)} บนเซิร์ฟเวอร์... ใช้เวลาประมาณ 15-45 วินาที`);
+      setNotice(`⏳ กำลังเลือกเบอร์ ${fmtNum(msisdn)}... ใช้เวลาไม่กี่วินาที`);
       return cloudBuy(msisdn, pool)
         .then(async r => {
           const data = await r.json().catch(() => ({}));
-          if (!r.ok || !data.ok) throw new Error(data.error || `cloud ${r.status}`);
+          if (!r.ok || !data.ok) {
+            const err = new Error(data.error || `cloud ${r.status}`);
+            err.unavailable = data.error === "unavailable";
+            throw err;
+          }
           setNotice(`✅ เลือกเบอร์ ${fmtNum(msisdn)} สำเร็จ — หน้าออฟเฟอร์เปิดแล้ว ทำรายการต่อได้เลย`);
           // navigate the already-open tab to the offer page (number reserved)
           if (data.offerUrl && tab && !tab.closed) {
@@ -356,8 +361,10 @@ function App() {
 
     if (BUY_API_EXPLICIT) {
       // explicit cloud URL → cloud only, listing page already open as fallback
-      cloud().catch(() => {
-        setNotice("❌ เซิร์ฟเวอร์ล้มเหลว — เปิดหน้าเบอร์แทน (แท็บที่เปิดอยู่)");
+      cloud().catch(e => {
+        setNotice(e && e.unavailable
+          ? "⚠️ เบอร์นี้ถูกจอง/ขายไปแล้ว — เปิดหน้าเบอร์แทน (แท็บที่เปิดอยู่)"
+          : "❌ เซิร์ฟเวอร์ล้มเหลว — เปิดหน้าเบอร์แทน (แท็บที่เปิดอยู่)");
       });
     } else {
       // env unset: prefer the local bridge (fast on this PC), then the default

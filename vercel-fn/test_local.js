@@ -1,31 +1,36 @@
 /**
- * Local test harness for api/buy.js.
+ * Local test harness for api/buy.js (no Chromium — direct API).
  *
  * Usage:
  *   node test_local.js [msisdn] [pool]
  *
  * If no msisdn is given, it first fetches a real currently-available number
- * from True's API (same endpoint/headers as buy_worker.py) and buys that one.
- *
- * Requires a local Chromium. First time:
- *   npm install
- *   npx playwright install chromium
- *
- * The harness auto-detects the locally installed Playwright Chromium and passes
- * it to the function via CHROMIUM_PATH (which api/buy.js already supports).
+ * from True's API (same endpoint/headers as the function) and buys that one.
+ * After the handler returns it re-queries the exact number to confirm the
+ * reservation dropped it from the pool.
  */
-const { chromium } = require("playwright");
+const crypto = require("crypto");
+const BASE = "https://store.true.th/api";
 
-// Point the function at the locally installed Playwright Chromium BEFORE
-// anything runs (api/buy.js reads CHROMIUM_PATH at launch time).
-if (!process.env.CHROMIUM_PATH) {
-  try {
-    process.env.CHROMIUM_PATH = chromium.executablePath();
-    console.log("CHROMIUM_PATH =", process.env.CHROMIUM_PATH);
-  } catch (e) {
-    console.error("No local Chromium found. Run: npx playwright install chromium");
-    process.exit(2);
-  }
+function makeHeaders() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const ts =
+    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+    `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const cid = ts + Math.floor(1e5 + Math.random() * 9e5);
+  const sid = `VECOM-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${crypto.randomUUID()}`;
+  return {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    Origin: "https://store.true.th",
+    Referer: "https://store.true.th/",
+    correlationid: cid,
+    "x-correlator-id": cid,
+    sessionid: sid,
+  };
 }
 
 const handler = require("./api/buy.js");
@@ -34,10 +39,7 @@ function mockRes() {
   const res = {
     _status: null,
     _json: null,
-    _headers: {},
-    setHeader(k, v) {
-      this._headers[k] = v;
-    },
+    setHeader() {},
     status(c) {
       this._status = c;
       return this;
@@ -51,31 +53,33 @@ function mockRes() {
 }
 
 async function fetchRealNumber(pool) {
-  const headers = {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    Origin: "https://store.true.th",
-    Referer: "https://store.true.th/",
-    correlationid: new Date().toISOString().replace(/\D/g, "").slice(0, 18),
-    "x-correlator-id": new Date().toISOString().replace(/\D/g, "").slice(0, 18),
-    sessionid: "VECOM-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") +
-      "-" + require("crypto").randomUUID(),
-  };
-  const r = await fetch("https://store.true.th/api/lucky-number/product-list", {
+  const r = await fetch(BASE + "/lucky-number/product-list", {
     method: "POST",
-    headers,
-    body: JSON.stringify({ type: pool, pagination: { page: 1, size: 1 } }),
+    headers: makeHeaders(),
+    body: JSON.stringify({ type: pool, pagination: { page: 1, size: 5 } }),
   });
   const resp = await r.json();
   const items = (resp && resp.data && resp.data.numbering) || [];
   if (!items.length) {
-    console.error("True API returned no numbers for pool", pool, JSON.stringify(resp).slice(0, 300));
+    console.error("True API returned no numbers for pool", pool);
     process.exit(3);
   }
-  console.log("API picked:", JSON.stringify(items[0], null, 2));
-  return items[0].msisdn;
+  console.log("API picked:", items[0].msisdn);
+  return String(items[0].msisdn);
+}
+
+async function exactCount(pool, msisdn) {
+  const digits = msisdn.slice(1);
+  const number_index = digits.split("").map((d, i) => ({ index: i, number: Number(d) }));
+  const r = await fetch(BASE + "/lucky-number/product-list", {
+    method: "POST",
+    headers: makeHeaders(),
+    body: JSON.stringify({ type: pool, number_index, pagination: { page: 1, size: 5 } }),
+  });
+  const resp = await r.json();
+  return ((resp && resp.data && resp.data.numbering) || []).filter(
+    (it) => String(it.msisdn) === msisdn
+  ).length;
 }
 
 async function main() {
@@ -86,7 +90,11 @@ async function main() {
     console.log("Using live number:", msisdn, "pool:", pool);
   }
 
-  const req = { method: "POST", headers: { "content-type": "application/json" }, body: { msisdn, pool } };
+  const req = {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: { msisdn, pool },
+  };
   const res = mockRes();
   const t0 = Date.now();
   try {
@@ -98,7 +106,13 @@ async function main() {
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
   console.log(`\nHTTP ${res._status} in ${elapsed}s`);
   console.log(JSON.stringify(res._json, null, 2));
-  process.exit(res._json && res._json.ok ? 0 : 1);
+
+  const remaining = await exactCount(pool, msisdn);
+  console.log(
+    `\nre-check exact query for ${msisdn}: ${remaining} result(s) ` +
+      (remaining === 0 ? "-> RESERVED" : "-> still listed")
+  );
+  process.exit(res._json && res._json.ok && remaining === 0 ? 0 : 1);
 }
 
 main();
