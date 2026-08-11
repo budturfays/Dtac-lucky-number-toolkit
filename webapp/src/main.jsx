@@ -403,7 +403,7 @@ function App() {
       <header className="header">
         <div>
           <h1>หาเบอร์มงคล</h1>
-          <span className="sub">ค้นหาเบอร์มงคล • บันทึกเบอร์โปรดอัตโนมัติในเบราว์เซอร์</span>
+          <span className="sub">ค้นหาเบอร์มงคลฟรี ไม่ต้องผ่านนายหน้า อัพเดทตลอด • บันทึกเบอร์โปรดได้ในเบราว์เซอร์</span>
         </div>
         <button className="coffee" onClick={() => setCoffeeOpen(true)} title="เลี้ยงกาแฟ">☕ เลี้ยงกาแฟ</button>
       </header>
