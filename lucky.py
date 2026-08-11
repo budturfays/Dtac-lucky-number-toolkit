@@ -535,6 +535,85 @@ def mode_random():
     paused()
 
 
+POOL_PAGES = {
+    "rahu": "https://store.true.th/lucky-number/postpaid/funtong-phrarahu",
+    "universal": "https://store.true.th/lucky-number/postpaid/somjade?type=all&priceplan=all",
+    "khanthep": "https://store.true.th/lucky-number/postpaid/funtong-khanthep?type=all&priceplan=all",
+    "naga": "https://store.true.th/lucky-number/postpaid/funtong-bernaga?priceplan=all",
+    "ajchang": "https://store.true.th/lucky-number/postpaid/morchang-personalize?type=all&priceplan=all",
+    "emperor": "https://store.true.th/lucky-number/postpaid/morchang-emperor?type=all&priceplan=all",
+}
+
+
+def open_in_browser(msisdn):
+    """Open a real browser, auto-fill the search for this number, click Select.
+    Leaves the browser on the offer page so you can finish the purchase."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("  Playwright not installed — cannot open browser.")
+        print("  Install with: pip install playwright && playwright install chromium")
+        return
+    pool = guess_pool(msisdn)
+    page_url = POOL_PAGES.get(pool, POOL_PAGES["universal"])
+    digits = msisdn[1:]  # 9 digits (positions 2-10), leading 0 is fixed
+    print(f"\n  Opening browser to select {fmt_num(msisdn)} "
+          f"({POOL_NAMES.get(pool, pool)}) ...")
+    print("  A Chromium window will open — it will fill the search and click เลือก.")
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=False)
+            ctx = browser.new_context(viewport={"width": 1600, "height": 1000})
+            page = ctx.new_page()
+            page.goto(page_url, wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_timeout(6000)
+            # dismiss cookie banner if present
+            try:
+                page.locator("#onetrust-accept-btn-handler").first.click(timeout=3000)
+                page.wait_for_timeout(1000)
+            except Exception:
+                pass
+            # fill the 9 position boxes (box 0 = fixed leading 0)
+            boxes = page.locator("input.numberPosition")
+            n = boxes.count()
+            if n < 10:
+                print(f"  position boxes not found ({n}) — page may have changed; "
+                      "select manually.")
+                input("  Press Enter to close...")
+                browser.close()
+                return
+            for i in range(9):
+                boxes.nth(i + 1).fill(digits[i])
+            page.wait_for_timeout(500)
+            # click search
+            page.locator("button", has_text="ค้นหาเบอร์").first.click()
+            # wait for result cards to appear
+            try:
+                page.wait_for_selector(".number-card", timeout=20000)
+            except Exception:
+                pass
+            page.wait_for_timeout(2000)
+            cards = page.locator(".number-card")
+            clicked = False
+            for i in range(cards.count()):
+                text = "".join(c for c in cards.nth(i).inner_text() if c.isdigit())
+                if text[:10] == msisdn:
+                    cards.nth(i).locator("button", has_text="เลือก").first.click()
+                    clicked = True
+                    break
+            page.wait_for_timeout(5000)
+            if clicked:
+                print(f"  ✅ Selected! Browser is on: {page.url}")
+                print("  Complete it there: SIM type -> package -> login -> payment.")
+            else:
+                print(f"  Number card not found ({cards.count()} card(s) shown). "
+                      "It may be unavailable, or select manually in the window.")
+            input("  Press Enter to close the browser window...")
+            browser.close()
+    except Exception as e:
+        print(f"  browser error: {e}")
+
+
 def mode_exact():
     num = ask_text("Type a full 10-digit number to check:")
     if num == "QUIT":
@@ -559,6 +638,10 @@ def mode_exact():
     chk = ask_choice("", ["Yes, check now", "No"])
     if chk == "Yes, check now":
         live_check([num])
+        print("\n  Open in browser to select it for purchase?")
+        buy = ask_choice("", ["Yes, open & select", "No"])
+        if buy == "Yes, open & select":
+            open_in_browser(num)
 
 
 # ── watch / availability ────────────────────────────────────────────────────
