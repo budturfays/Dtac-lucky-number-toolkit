@@ -43,11 +43,19 @@ jobs:
       # 3) Build locally into .vercel/output (runs `npm run build` via vercel.json)
       #    and deploy that exact output with --prebuilt, so the fresh data from
       #    step 1 is what gets served (gitignored files aren't uploaded otherwise).
+      - name: Pull Vercel project settings
+        run: npx --yes vercel@58 pull --yes
+        env:
+          VERCEL_ORG_ID: team_nRdGzntRZAxuwv1ZxDUybLd3
+          VERCEL_PROJECT_ID: prj_TXjIz88GHbYRw85KSKtaX3vdLzVA
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
       - name: Build for Vercel
         run: npx --yes vercel@58 build --prod --yes
         env:
           VERCEL_ORG_ID: team_nRdGzntRZAxuwv1ZxDUybLd3
           VERCEL_PROJECT_ID: prj_TXjIz88GHbYRw85KSKtaX3vdLzVA
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
       # 4) Deploy to Vercel Hosting (production)
       #    Requires a VERCEL_TOKEN secret: Vercel -> Account Settings -> Tokens
