@@ -4,6 +4,81 @@ import { ref, onValue } from "firebase/database";
 import { db } from "./firebase.js";
 import "./styles.css";
 
+// ── SEO (runtime metadata; static tags live in index.html) ────────────────
+const SEO_TITLE = "เบอร์มงคล Finder – ค้นหาเบอร์สวยและเบอร์มงคล";
+const SEO_DESCRIPTION =
+  "ค้นหาเบอร์มงคลและเบอร์สวยจากทรูและดีแทค ดูดวงเบอร์โทรศัพท์ วิเคราะห์เลขมงคล เบอร์ตอง เบอร์ 4 ตัวท้าย ราคาถูก อัปเดตสดทุกวัน";
+
+function setMeta(name, content) {
+  let el = document.head.querySelector(`meta[name="${name}"]`);
+  if (!el) {
+    el = document.createElement("meta");
+    el.setAttribute("name", name);
+    document.head.appendChild(el);
+  }
+  el.setAttribute("content", content);
+}
+
+function setMetaProperty(property, content) {
+  let el = document.head.querySelector(`meta[property="${property}"]`);
+  if (!el) {
+    el = document.createElement("meta");
+    el.setAttribute("property", property);
+    document.head.appendChild(el);
+  }
+  el.setAttribute("content", content);
+}
+
+function applySeo() {
+  document.title = SEO_TITLE;
+  setMeta("description", SEO_DESCRIPTION);
+  setMetaProperty("og:title", SEO_TITLE);
+  setMetaProperty("og:description", SEO_DESCRIPTION);
+  document.documentElement.lang = "th";
+}
+
+// ── FAQ content (mirrored in the JSON-LD FAQPage in index.html) ───────────
+const FAQS = [
+  {
+    q: "เบอร์มงคลคืออะไร?",
+    a: "เบอร์มงคล คือหมายเลขโทรศัพท์ที่มีตัวเลขหรือแพทเทิร์นเป็นมงคลตามความเชื่อ เช่น เบอร์ตอง 888 เบอร์สี่ตัวท้าย 8888 หรือเลขลำดับ 1234 54321 โดยเชื่อว่าช่วยเสริมโชคลาภ การงาน การเงิน และความสำเร็จให้ผู้ใช้งาน",
+  },
+  {
+    q: "ดูดวงเบอร์โทรศัพท์อย่างไร?",
+    a: "การดูดวงเบอร์โทรศัพท์นิยมวิเคราะห์จากตัวเลขและแพทเทิร์นของเบอร์ เช่น เลข 8 สื่อถึงความมั่งคั่ง เลข 9 สื่อถึงความก้าวหน้า เลข 7 สื่อถึงความสำเร็จ ส่วนเบอร์ตองและเลขเรียงติดกันก็ถือเป็นเลขมงคลยอดนิยม อย่างไรก็ตามความหมายของเลขอาจต่างกันไปตามศาสตร์ตัวเลขที่ใช้",
+  },
+  {
+    q: "เบอร์ตองคืออะไร?",
+    a: "เบอร์ตอง คือเบอร์โทรศัพท์ที่มีตัวเลขซ้ำกันติดกันตั้งแต่ 2 ตัวขึ้นไป เช่น เบอร์ตอง 888 เบอร์ตอง 999 เบอร์ตอง 555 หรือ 9999 ยิ่งตัวเลขเยอะและติดกันยาว ราคายิ่งสูงและเป็นที่ต้องการของตลาดเบอร์มงคล",
+  },
+  {
+    q: "ราคาเบอร์มงคลเท่าไหร่?",
+    a: "ราคาเบอร์มงคลของทรูและดีแทคขึ้นอยู่กับความสวยและความหายากของแพทเทิร์น เบอร์ตอง 3 ตัวท้ายอาจเริ่มต้นไม่กี่ร้อยบาทต่อเดือน ส่วนเบอร์สี่ตัว 8888 หรือเบอร์ลำดับ 54321 อาจมีราคาหลายพันถึงหลายหมื่นบาทต่อเดือน ราคาอัปเดตสดบนเว็บไซต์",
+  },
+  {
+    q: "ซื้อเบอร์มงคลทรูได้ที่ไหน?",
+    a: "ซื้อเบอร์มงคลทรูและดีแทคได้ผ่านเบอร์มงคล Finder ซึ่งรวบรวมเบอร์มงคลจากทรูและดีแทคไว้ในที่เดียว ตรวจสอบแพทเทิร์น ราคา และกดซื้อได้ทันที",
+  },
+  {
+    q: "วิธีเลือกเบอร์มงคล?",
+    a: "เริ่มจากกำหนดเลขที่ต้องการ เช่น เลขท้าย 888 หรือหลีกเลี่ยงเลขที่ไม่ชอบ จากนั้นใช้ตัวกรองค้นหาเบอร์ที่ลงท้ายด้วยเลขที่ต้องการ มีเลขที่ต้องการ หรือไม่มีเลขที่ไม่ต้องการ แล้วเปรียบเทียบราคากับแพทเทิร์นก่อนตัดสินใจ",
+  },
+];
+
+function FaqSection() {
+  return (
+    <section className="card faq" aria-label="คำถามที่พบบ่อยเกี่ยวกับเบอร์มงคล">
+      <h2>คำถามที่พบบ่อย</h2>
+      {FAQS.map(f => (
+        <details key={f.q} className="faq-item">
+          <summary>{f.q}</summary>
+          <p>{f.a}</p>
+        </details>
+      ))}
+    </section>
+  );
+}
+
 // ── number utilities (mirror of lucky.py) ──────────────────────────────────
 function fmtNum(m) {
   return m.length === 10 ? `${m.slice(0,3)} ${m.slice(3,6)} ${m.slice(6)}` : m;
@@ -158,6 +233,9 @@ function App() {
   const [randomPick, setRandomPick] = useState(null);
   const [live, setLive] = useState(null);
   const [bridge, setBridge] = useState("checking"); // checking | up | down
+
+  // apply runtime SEO metadata once the app mounts
+  useEffect(() => { applySeo(); }, []);
 
   // probe the local buy bridge (for the status pill + auto-buy button behavior)
   useEffect(() => {
@@ -522,6 +600,8 @@ function App() {
           </section>
         </>
       )}
+
+      <FaqSection />
     </div>
   );
 }

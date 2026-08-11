@@ -117,3 +117,20 @@ button.coffee:hover { background: #4a3530; }
 .live-mem { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .live-mem-label { color: #8a93b8; font-size: 12px; }
 .mem-chip { background: #2a1d3a; color: #d4b8ff; padding: 3px 8px; border-radius: 6px; font-size: 12px; font-family: Consolas, monospace; }
+
+/* FAQ section */
+.faq h2 { font-size: 18px; color: #ffd700; margin-bottom: 12px; }
+.faq-item {
+  border: 1px solid #232a4a; border-radius: 8px; margin-bottom: 8px;
+  background: #101426; overflow: hidden;
+}
+.faq-item summary {
+  cursor: pointer; padding: 12px 14px; font-size: 14px; color: #e8eaf0;
+  list-style: none; display: flex; align-items: center; justify-content: space-between;
+  user-select: none;
+}
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after { content: "▾"; color: #ffd700; transition: transform 0.2s; }
+.faq-item[open] summary::after { transform: rotate(180deg); }
+.faq-item summary:hover { background: #1a2040; }
+.faq-item p { padding: 0 14px 14px; font-size: 13px; line-height: 1.7; color: #b9c2e6; }

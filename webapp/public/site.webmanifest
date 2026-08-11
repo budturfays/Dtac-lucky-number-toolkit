@@ -1,0 +1,19 @@
+{
+  "name": "เบอร์มงคล Finder",
+  "short_name": "เบอร์มงคล",
+  "description": "ค้นหาเบอร์มงคล เบอร์สวย ราคาถูก จากทรูและดีแทค",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f1220",
+  "theme_color": "#0f1220",
+  "lang": "th",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
