@@ -1,0 +1,49 @@
+name: Refresh lucky numbers
+
+on:
+  schedule:
+    # every 6 hours
+    - cron: "0 */6 * * *"
+  workflow_dispatch: # allow manual run
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webapp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+
+      # 1) Fetch fresh numbers from True's API and build the catalog JSON
+      - name: Fetch fresh data
+        run: |
+          python -m pip install --quiet -r requirements.txt
+          python scripts/fetch_and_export.py
+
+      # 2) Build the site
+      - name: Install & build
+        run: |
+          npm ci
+          npm run build
+
+      # 3) Deploy to Firebase Hosting
+      - name: Deploy to Firebase
+        uses: w9jds/firebase-action@v13
+        with:
+          args: deploy --only hosting --project lucky-number-th
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}

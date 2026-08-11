@@ -1,0 +1,15 @@
+# deps & build
+node_modules/
+dist/
+
+# Firebase local cache & secrets
+.firebase/
+scripts/service-account.json
+
+# large generated data (rebuilt by export script / GitHub Actions)
+public/data/numbers.json
+
+# logs & scratch
+*.csv
+watch_log.csv
+_tmp_*.py
