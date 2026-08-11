@@ -131,6 +131,7 @@ function matches(n, f) {
   const m = n.msisdn;
   if (f.ends && !m.endsWith(f.ends)) return false;
   if (f.seq && !m.includes(f.seq)) return false;
+  if (f.abab && !hasABAB(m)) return false;
   if (f.mask) {
     const mask = f.mask.replace(/[\s-]/g, "");
     for (let i = 0; i < mask.length; i++) {
@@ -643,12 +644,15 @@ function App() {
 
             <div className="quick-row">
               <span className="quick-label">โหมด:</span>
-              <button className={!filters.ends && !filters.minrun && !filters.seq && !filters.mask && !filters.include && !filters.exclude && !filters.price && !showFavs && sort === "repeat" ? "chip on" : "chip"} onClick={() => setQuick({})}>ทั้งหมด</button>
+              <button className={!filters.ends && !filters.minrun && !filters.seq && !filters.mask && !filters.include && !filters.exclude && !filters.abab && !filters.price && !showFavs && sort === "repeat" ? "chip on" : "chip"} onClick={() => setQuick({})}>ทั้งหมด</button>
               <button className="chip" onClick={() => setQuick({ ends: "888" })}>จบ 888</button>
+              <button className="chip" onClick={() => setQuick({ ends: "000" })}>จบ 000</button>
+              <button className="chip" onClick={() => setQuick({ ends: "0000" })}>จบ 0000</button>
               <button className="chip" onClick={() => setQuick({ minrun: "3" })}>ตอง 888</button>
               <button className="chip" onClick={() => setQuick({ minrun: "4" })}>สี่ตัว 8888</button>
               <button className="chip" onClick={() => setQuick({ seq: "54321" })}>54321</button>
               <button className="chip" onClick={() => setQuick({ seq: "1234" })}>1234</button>
+              <button className="chip" onClick={() => setQuick({ abab: true })}>1212 (ABAB)</button>
               <button className="chip" onClick={() => setQuick({ price: "under500" })}>ราคาต่ำ 500</button>
             </div>
 
