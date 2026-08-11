@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { ref, onValue } from "firebase/database";
 import { db } from "./firebase.js";
@@ -210,6 +210,89 @@ function bridgeFetch(path, options = {}) {
     .finally(() => clearTimeout(timer));
 }
 
+// ── in-browser refresh from True (via a public CORS proxy, no backend) ─────
+// The static numbers.json is the cold-start catalog. Visitors can trigger a
+// refresh that pulls fresh random samples straight from True's API through a
+// public CORS proxy — True's API sends no CORS headers, so the browser can't
+// call it directly. Fresh rows are upserted by msisdn on top of the snapshot.
+// Note: the proxy fetches from its own IP, not the visitor's — the win is
+// "no local PC / no cloud backend", not literally "the user's IP".
+const TRUE_API = "https://store.true.th/api/lucky-number/product-list";
+const CORS_PROXIES = [
+  u => `https://cors.eu.org/${u}`,
+  u => `https://proxy.cors.sh/${u}`,
+];
+
+function trueHeaders() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+             `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const cid = ts + Math.random().toString(16).slice(2, 6);
+  const sid = `VECOM-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${
+    typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : Math.random().toString(16).slice(2) + Date.now().toString(16)
+  }`;
+  return {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    correlationid: cid,
+    "x-correlator-id": cid,
+    sessionid: sid,
+  };
+}
+
+async function proxyDraw(pool, size = 200) {
+  const body = JSON.stringify({ type: pool, pagination: { page: 1, size } });
+  const headers = trueHeaders();
+  let lastErr = null;
+  for (const build of CORS_PROXIES) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    try {
+      const r = await fetch(build(TRUE_API), {
+        method: "POST",
+        headers,
+        body,
+        signal: ctrl.signal,
+      });
+      if (!r.ok) throw new Error(`proxy HTTP ${r.status}`);
+      const data = await r.json();
+      if (!data || data.statusCode !== 200 || !Array.isArray(data.data?.numbering))
+        throw new Error("proxy returned unexpected payload");
+      return data.data.numbering;
+    } catch (e) {
+      lastErr = e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr || new Error("all CORS proxies unavailable");
+}
+
+// map a raw True API item to the app's row shape (mirror fetch_and_export.py)
+function rawToRow(it) {
+  const d0 = (it.detail || [])[0] || {};
+  let stars = 0;
+  for (const t of it.luckyType || []) stars += Number(t.star) || 0;
+  return {
+    msisdn: String(it.msisdn),
+    price_baht_month: Number(d0.rc) || 0,
+    pools: it.groupHora || "universal",
+    stars,
+  };
+}
+
+function recomputeRarity(list) {
+  const rarity = {};
+  for (const n of list) {
+    const key = rawStruct(n.msisdn).join(",");
+    rarity[key] = (rarity[key] || 0) + 1;
+  }
+  for (const k of Object.keys(rarity)) STRUCT_RARITY[k] = rarity[k];
+}
+
 // ── components ──────────────────────────────────────────────────────────────
 function App() {
   const [numbers, setNumbers] = useState([]);
@@ -223,6 +306,9 @@ function App() {
   const [notice, setNotice] = useState(null);
   const [randomPick, setRandomPick] = useState(null);
   const [live, setLive] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshInFlight = useRef(false);
+  const proxyRefreshed = useRef(false);
   const [lastmod, setLastmod] = useState(null);
 
   // apply runtime SEO metadata once the app mounts
@@ -315,6 +401,7 @@ function App() {
         const r = await fetch(`${import.meta.env.BASE_URL}data/numbers.json?v=${ts}`);
         const data = await r.json();
         if (cancelled) return;
+        if (proxyRefreshed.current) return; // keep the proxy-freshened catalog in memory
         setNumbers(data);
         setLoadingData(false);
         setDataFetchedAt(new Date());
@@ -323,12 +410,7 @@ function App() {
           .then(res => (res.ok ? res.json() : null))
           .then(m => { if (m && m.lastmod && !cancelled) setLastmod(m.lastmod); })
           .catch(() => { /* meta is optional; keep the previous lastmod */ });
-        const rarity = {};
-        for (const n of data) {
-          const key = rawStruct(n.msisdn).join(",");
-          rarity[key] = (rarity[key] || 0) + 1;
-        }
-        for (const k of Object.keys(rarity)) STRUCT_RARITY[k] = rarity[k];
+        recomputeRarity(data);
       } catch (e) {
         if (!cancelled) { setNotice("Failed to load dataset"); setLoadingData(false); }
       }
@@ -337,6 +419,54 @@ function App() {
     const timer = setInterval(load, 5 * 60 * 1000); // refetch every 5 min
     return () => { cancelled = true; clearInterval(timer); };
   }, []);
+
+  // in-browser refresh: pull fresh samples from True via a CORS proxy and
+  // upsert them into the in-memory catalog (snapshot stays as cold start)
+  const refreshData = useCallback(async (silent) => {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    setRefreshing(true);
+    if (!silent) setNotice("⏳ กำลังอัปเดตข้อมูลจากทรูผ่านตัวกลาง...");
+    const plan = [];
+    for (const [pool, draws] of [["universal", 3], ["rahu", 2], ["khanthep", 2], ["naga", 1], ["ajchang", 1], ["emperor", 1]])
+      for (let i = 0; i < draws; i++) plan.push(pool);
+    const fresh = new Map();
+    let failed = 0;
+    for (let i = 0; i < plan.length; i += 3) {
+      const batch = plan.slice(i, i + 3);
+      const results = await Promise.allSettled(batch.map(p => proxyDraw(p)));
+      for (const res of results) {
+        if (res.status === "fulfilled") {
+          for (const r of res.value.map(rawToRow)) fresh.set(r.msisdn, r);
+        } else {
+          failed++;
+        }
+      }
+    }
+    refreshInFlight.current = false;
+    setRefreshing(false);
+    if (fresh.size === 0) {
+      setNotice("❌ อัปเดตล้มเหลว — ไม่สามารถดึงข้อมูลจากทรูผ่านตัวกลางได้ ลองอีกครั้ง");
+      return;
+    }
+    proxyRefreshed.current = true;
+    setNumbers(prev => {
+      const byId = new Map(fresh);
+      const next = prev.map(n => byId.get(n.msisdn) || n);
+      const seen = new Set(next.map(n => n.msisdn));
+      for (const r of fresh.values()) if (!seen.has(r.msisdn)) next.push(r);
+      recomputeRarity(next);
+      return next;
+    });
+    setDataFetchedAt(new Date());
+    if (!silent) setNotice(`✅ อัปเดตแล้ว! ได้เบอร์จากทรู ${fresh.size.toLocaleString()} เบอร์ (ล้มเหลว ${failed}/${plan.length})`);
+  }, []);
+
+  // silent auto-refresh every 60 min (proxy refresh layered on the snapshot)
+  useEffect(() => {
+    const t = setInterval(() => refreshData(true), 60 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [refreshData]);
 
   const toggleFav = useCallback((msisdn, row) => {
     setFavorites(prev => {
@@ -547,9 +677,17 @@ function App() {
               {dataFetchedAt && (
                 <span className="updated">
                   อัปเดต {dataFetchedAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
-                  (รีเฟรชอัตโนมัติทุก 5 นาที)
+                  {proxyRefreshed.current ? " (สดจากทรู)" : "(รีเฟรชอัตโนมัติทุก 5 นาที)"}
                 </span>
               )}
+              <button
+                className="refresh-btn"
+                onClick={() => refreshData(false)}
+                disabled={refreshing}
+                title="ดึงข้อมูลสดจาก True ผ่านตัวกลาง CORS จากเบราว์เซอร์ของคุณ"
+              >
+                {refreshing ? "⏳ กำลังอัปเดต..." : "🔄 อัปเดตข้อมูล"}
+              </button>
             </div>
             <table>
               <thead>

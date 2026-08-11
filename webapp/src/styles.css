@@ -58,6 +58,13 @@ button.active { background: #ffd700; color: #14141a; border-color: #ffd700; }
 .filters select { flex: 0 1 auto; }
 .results .count { color: #8a93b8; font-size: 13px; margin-bottom: 8px; }
 .results .count .updated { margin-left: 10px; color: #5a7a5a; font-size: 12px; }
+button.refresh-btn {
+  margin-left: 10px; background: #14301f; color: #a8e6c0;
+  border: 1px solid #2a5a3a; padding: 5px 12px; border-radius: 8px;
+  font-size: 12px; cursor: pointer; vertical-align: middle;
+}
+button.refresh-btn:hover { background: #1c402a; }
+button.refresh-btn:disabled { opacity: 0.6; cursor: wait; }
 table { width: 100%; border-collapse: collapse; background: #151a30; border-radius: 12px; overflow: hidden; }
 th { text-align: left; padding: 10px 12px; font-size: 12px; color: #8a93b8; border-bottom: 1px solid #232a4a; }
 td { padding: 9px 12px; border-bottom: 1px solid #1c2340; font-size: 14px; }
