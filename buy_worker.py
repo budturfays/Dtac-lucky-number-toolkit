@@ -131,6 +131,86 @@ def append_processed(msisdn, status):
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"), msisdn, status))
 
 
+# ── offer-page completion (after เลือก on the card) ─────────────────────────
+def _dismiss_popups(page):
+    """Close any visible dialog/overlay/popup that would block the offer page."""
+    try:
+        page.evaluate("""() => {
+            const selectors = '[role=dialog], .modal, [class*=popup], [class*=modal], [class*=overlay]';
+            const els = [...document.querySelectorAll(selectors)].filter(e => e.offsetParent !== null);
+            for (const e of els) {
+                // click a close button inside if present
+                const close = e.querySelector('button[class*=close], [aria-label*=close], [aria-label*=ปิด]');
+                if (close) { close.click(); continue; }
+                // or just the cookie accept button
+                const accept = e.querySelector('#onetrust-accept-btn-handler, [id*=accept]');
+                if (accept) accept.click();
+            }
+            return els.length;
+        }""")
+    except Exception:
+        pass
+
+
+def _select_sim(page):
+    """Click the SIM type card (eSIM preferred, else ซิมการ์ด). Returns chosen text."""
+    return page.evaluate("""() => {
+        const divs = [...document.querySelectorAll('div')].filter(d => {
+            const t = (d.innerText||'').trim();
+            return /^(eSIM|ซิมการ์ด)/.test(t) && t.length < 60 && !d.querySelector('input,button');
+        });
+        divs.sort((a,b) => (a.innerText||'').length - (b.innerText||'').length);
+        const card = divs.find(d => /eSIM/i.test(d.innerText||'')) || divs[0];
+        if (card) { card.click(); return card.innerText.replace(/\\s+/g,' ').trim(); }
+        return null;
+    }""")
+
+
+def _pick_cheapest_package(page):
+    """Click the 'เลือก' button on the package card with the lowest price.
+    Returns the chosen price or None."""
+    return page.evaluate("""() => {
+        const btns = [...document.querySelectorAll('button')].filter(b => (b.innerText||'').trim() === 'เลือก');
+        let best = null;
+        for (const b of btns) {
+            let n = b, depth = 0, cardText = '';
+            while (n && depth < 6) {
+                const t = (n.innerText||'').replace(/\\s+/g,' ');
+                if (/บาท/.test(t) && t.length < 300) { cardText = t; break; }
+                n = n.parentElement; depth++;
+            }
+            const m = cardText.match(/([\\d,]+)\\s*บาท/);
+            if (!m) continue;
+            const price = parseInt(m[1].replace(/,/g,''));
+            if (!best || price < best.price) best = {price, btn: b};
+        }
+        if (best) { best.btn.click(); return best.price; }
+        return null;
+    }""")
+
+
+def _check_terms_and_focus_id(page):
+    """On /verify: tick the consent checkbox if present and not checked,
+    and focus the national-ID field so the user just types it.
+    Returns the field placeholder if found."""
+    return page.evaluate("""() => {
+        // consent checkbox
+        const cbs = [...document.querySelectorAll('input[type=checkbox]')];
+        for (const cb of cbs) {
+            if (cb.checked === false && cb.offsetParent !== null &&
+                !/ot-|category|cookie/i.test(cb.id + ' ' + (cb.name||''))) {
+                cb.click();
+                break;
+            }
+        }
+        // national-ID field
+        const idField = [...document.querySelectorAll('input')].find(
+            e => (e.placeholder||'').includes('บัตรประชาชน'));
+        if (idField) { idField.focus(); return idField.placeholder; }
+        return null;
+    }""")
+
+
 # ── single-number browser flow ──────────────────────────────────────────────
 def _register(browser):
     with _browsers_lock:
@@ -228,6 +308,22 @@ def select_number(msisdn, headless=False, close_after=0, phase_done=None):
                     page.wait_for_timeout(5000)
                     if result:
                         _log.info("✅ SELECTED %s — browser on: %s", msisdn, page.url)
+                        # Complete the offer: dismiss popups, pick SIM, cheapest package
+                        _dismiss_popups(page)
+                        page.wait_for_timeout(500)
+                        sim = _select_sim(page)
+                        _log.info("  SIM type: %s", sim)
+                        page.wait_for_timeout(800)
+                        price = _pick_cheapest_package(page)
+                        _log.info("  cheapest package: %s บาท", price)
+                        page.wait_for_timeout(6000)
+                        if page.url.endswith("/verify"):
+                            _log.info("  ✅ on /verify — terms ticked, ID field focused")
+                            ph = _check_terms_and_focus_id(page)
+                            _log.info("  ONLY remaining: enter national ID ('%s') + ยืนยัน",
+                                      ph or "เลขบัตรประชาชน")
+                        else:
+                            _log.info("  after package: %s", page.url)
                         _log.info("Finish the checkout in that window; closing it "
                                   "lets the worker move on.")
                     else:
