@@ -157,17 +157,41 @@ const POOL_PAGES = {
   emperor: "https://store.true.th/lucky-number/postpaid/morchang-emperor?type=all&priceplan=all",
 };
 
-function buyUrl(n) {
+function poolOf(n) {
   const pools = (n.pools || n.pool || "universal").split(",");
-  let pool = pools.find(p => POOL_PAGES[p] || POOL_PAGES[p.split("-")[0]]);
-  if (!pool) return POOL_PAGES.universal;
-  return POOL_PAGES[pool] ? POOL_PAGES[pool] : POOL_PAGES[pool.split("-")[0]];
+  const hit = pools.find(p => POOL_PAGES[p] || POOL_PAGES[p.split("-")[0]]);
+  if (!hit) return "universal";
+  return POOL_PAGES[hit] ? hit : hit.split("-")[0];
+}
+
+function buyUrl(n) {
+  return POOL_PAGES[poolOf(n)] || POOL_PAGES.universal;
+}
+
+// ── cloud buy API (Vercel serverless function) ─────────────────────────────
+// Primary buy path: POST /api/buy on a Vercel function that drives headless
+// Chromium to auto-select the number on True's site (mirrors buy_worker.py).
+// Override the URL at build time with: VITE_BUY_API=https://<project>.vercel.app/api/buy
+const DEFAULT_BUY_API = "https://lucky-number-buy.vercel.app/api/buy";
+const BUY_API = (import.meta.env.VITE_BUY_API || DEFAULT_BUY_API).replace(/\/+$/, "");
+const BUY_API_EXPLICIT = Boolean((import.meta.env.VITE_BUY_API || "").trim());
+
+function cloudBuy(msisdn, pool) {
+  const ctrl = new AbortController();
+  // the browser flow takes ~15-45s — way beyond the local bridge's 2s probe
+  const timer = setTimeout(() => ctrl.abort(), 80000);
+  return fetch(BUY_API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ msisdn, pool }),
+    signal: ctrl.signal,
+  }).finally(() => clearTimeout(timer));
 }
 
 // ── local buy bridge (auto-buy in the background on this PC) ───────────────
-// The web app is a static site; the actual buying is done by buy_bridge.py +
-// buy_worker.py running on the user's machine. If the bridge is not running,
-// the buy button falls back to opening the listing page in a new tab.
+// Kept as a fallback: if VITE_BUY_API is unset AND the local bridge is up, the
+// buy button uses the bridge as before. The web app is a static site; the
+// actual buying is done by buy_bridge.py + buy_worker.py running on this machine.
 const BRIDGE_URL = "http://localhost:8765";
 
 function bridgeFetch(path, options = {}) {
@@ -194,27 +218,56 @@ function App() {
   // apply runtime SEO metadata once the app mounts
   useEffect(() => { applySeo(); }, []);
 
-  // buy click: POST to the local bridge so buy_worker.py injects the number
-  // in a hidden browser, lands on the offer page, then SHOWS the window for
-  // the user to pick SIM / promo / package manually.
+  // buy click: try, in order — the Vercel cloud function (works from any
+  // device), the local bridge (fast on this PC when env unset), then opening
+  // the listing page as today.
   const handleBuy = useCallback((e, row) => {
     const msisdn = row?.msisdn;
     if (!msisdn) return;
     if (e) e.preventDefault();
-    bridgeFetch("/buy", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ msisdn }),
-    })
-      .then(async r => {
+    const pool = poolOf(row);
+
+    const openListing = () => window.open(buyUrl(row), "_blank", "noopener");
+
+    // cloud path: headless Chromium on Vercel selects the number on True's site
+    const cloud = () => {
+      setNotice(`⏳ กำลังเลือกเบอร์ ${fmtNum(msisdn)} บนเซิร์ฟเวอร์... ใช้เวลาประมาณ 15-45 วินาที`);
+      return cloudBuy(msisdn, pool)
+        .then(async r => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || !data.ok) throw new Error(data.error || `cloud ${r.status}`);
+          setNotice(`✅ เลือกเบอร์ ${fmtNum(msisdn)} สำเร็จ — เปิดหน้าออฟเฟอร์เพื่อทำรายการต่อ`);
+          if (data.offerUrl) window.open(data.offerUrl, "_blank", "noopener");
+        });
+    };
+
+    // local bridge path: buy_worker.py drives a browser on this PC
+    const bridge = () =>
+      bridgeFetch("/buy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ msisdn }),
+      }).then(async r => {
         if (!r.ok) throw new Error(`bridge ${r.status}`);
         setNotice(`⏳ กำลังกรอกเบอร์ ${fmtNum(msisdn)} ... หน้าต่างจะเปิดขึ้นเพื่อให้คุณเลือกซิม/โปรโมชันเอง`);
-      })
-      .catch(() => {
-        // bridge unreachable → fall back to opening the listing page
-        window.open(buyUrl(row), "_blank", "noopener");
-        setNotice("บริดจ์ไม่ทำงาน — เปิดหน้าเบอร์แทน (รัน python buy_bridge.py บนเครื่องนี้)");
       });
+
+    if (BUY_API_EXPLICIT) {
+      // explicit cloud URL → cloud only, listing page as fallback
+      cloud().catch(() => {
+        setNotice("❌ เซิร์ฟเวอร์ล้มเหลว — เปิดหน้าเบอร์แทน");
+        openListing();
+      });
+    } else {
+      // env unset: prefer the local bridge (fast on this PC), then the default
+      // cloud function, then the listing page.
+      bridge()
+        .catch(() => cloud())
+        .catch(() => {
+          openListing();
+          setNotice("บริดจ์และคลาวด์ไม่พร้อมใช้งาน — เปิดหน้าเบอร์แทน");
+        });
+    }
   }, []);
 
   // buy-me-a-coffee: Thai modal with a PromptPay QR code
@@ -337,13 +390,13 @@ function App() {
           <h1>เบอร์มงคล Finder</h1>
           <span className="sub">ค้นหาเบอร์มงคล • บันทึกเบอร์โปรดอัตโนมัติในเบราว์เซอร์</span>
         </div>
-        <button className="coffee" onClick={() => setCoffeeOpen(true)} title="ซื้อกาแฟให้ผู้พัฒนา ☕">☕ ซื้อกาแฟให้</button>
+        <button className="coffee" onClick={() => setCoffeeOpen(true)} title="เลี้ยงกาแฟ">☕ เลี้ยงกาแฟ</button>
       </header>
 
       {coffeeOpen && (
         <div className="coffee-modal" onClick={() => setCoffeeOpen(false)}>
           <div className="card" onClick={e => e.stopPropagation()}>
-            <h3>☕ ซื้อกาแฟให้ผู้พัฒนา</h3>
+            <h3>☕ เลี้ยงกาแฟ</h3>
             <img
               className="qr-img"
               src="https://promptpay.io/0869532969"
