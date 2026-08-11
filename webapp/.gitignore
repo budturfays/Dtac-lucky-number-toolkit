@@ -2,7 +2,11 @@
 node_modules/
 dist/
 
-# Firebase local cache & secrets
+# Vercel local cache & secrets
+.vercel/
+.env.local
+
+# Firebase local cache & secrets (Firebase is being removed)
 .firebase/
 scripts/service-account.json
 

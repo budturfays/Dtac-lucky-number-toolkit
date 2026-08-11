@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://lucky-number-th.web.app/sitemap.xml
+Sitemap: https://lucky-number-web-lac.vercel.app/sitemap.xml

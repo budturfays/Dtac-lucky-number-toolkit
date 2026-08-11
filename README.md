@@ -28,8 +28,8 @@ That's it, everything is under one menu.
 
 ## Click-to-buy from the web app (auto background purchase)
 
-The web app (`webapp/`, live at `https://lucky-number-th.web.app`) lets you
-click **ซื้อ** on a number. Because True's store has no deep link for a
+The web app (`webapp/`, live at `https://lucky-number-web-lac.vercel.app`)
+lets you click **ซื้อ** on a number. Because True's store has no deep link for a
 specific number (it passes the number through the page's app state), the only
 way to auto-select one is browser automation. The web app is a static site, so
 the actual automation runs **on your PC** through two small local scripts:

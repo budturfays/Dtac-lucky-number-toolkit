@@ -36,17 +36,26 @@ jobs:
           python -m pip install --quiet -r requirements.txt
           python scripts/fetch_and_export.py
 
-      # 2) Build the site
-      - name: Install & build
-        run: |
-          npm ci
-          npm run build
+      # 2) Install dependencies
+      - name: Install dependencies
+        run: npm ci
 
-      # 3) Deploy to Firebase Hosting
-      # Uses firebase-tools via npx in a run step so the working-directory
-      # (webapp) applies and firebase.json resolves (container actions ignore
-      # defaults.run.working-directory and would run at the repo root).
-      - name: Deploy to Firebase Hosting
-        run: npx --yes firebase-tools deploy --only hosting --project lucky-number-th
+      # 3) Build locally into .vercel/output (runs `npm run build` via vercel.json)
+      #    and deploy that exact output with --prebuilt, so the fresh data from
+      #    step 1 is what gets served (gitignored files aren't uploaded otherwise).
+      - name: Build for Vercel
+        run: npx --yes vercel@58 build --prod --yes
         env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          VERCEL_ORG_ID: team_nRdGzntRZAxuwv1ZxDUybLd3
+          VERCEL_PROJECT_ID: prj_TXjIz88GHbYRw85KSKtaX3vdLzVA
+
+      # 4) Deploy to Vercel Hosting (production)
+      #    Requires a VERCEL_TOKEN secret: Vercel -> Account Settings -> Tokens
+      #    -> Create Token (no expiry), then add it as a repo secret named
+      #    VERCEL_TOKEN (Settings -> Secrets and variables -> Actions).
+      - name: Deploy to Vercel (production)
+        run: npx --yes vercel@58 deploy --prebuilt --prod --yes
+        env:
+          VERCEL_ORG_ID: team_nRdGzntRZAxuwv1ZxDUybLd3
+          VERCEL_PROJECT_ID: prj_TXjIz88GHbYRw85KSKtaX3vdLzVA
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

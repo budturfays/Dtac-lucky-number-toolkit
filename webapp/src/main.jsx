@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { ref, onValue } from "firebase/database";
-import { db } from "./firebase.js";
 import "./styles.css";
 
 // ── SEO (runtime metadata; static tags live in index.html) ────────────────
@@ -306,7 +304,6 @@ function App() {
   const [limit, setLimit] = useState(30);
   const [notice, setNotice] = useState(null);
   const [randomPick, setRandomPick] = useState(null);
-  const [live, setLive] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const refreshInFlight = useRef(false);
   const proxyRefreshed = useRef(false);
@@ -369,13 +366,6 @@ function App() {
 
   // buy-me-a-coffee: Thai modal with a PromptPay QR code
   const [coffeeOpen, setCoffeeOpen] = useState(false);
-
-  // subscribe to live inventory data (RTDB)
-  useEffect(() => {
-    const liveRef = ref(db, "live");
-    const off = onValue(liveRef, snap => setLive(snap.val()), err => { /* offline ok */ });
-    return off;
-  }, []);
 
   // load favorites from localStorage
   useEffect(() => {
@@ -561,26 +551,11 @@ function App() {
 
       {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
 
-      {(live || lastmod) && (
+      {lastmod && (
         <section className="livebar card">
           <div className="live-title">
-            <span className="live-dot" /> สด อัปเดต {lastmod ? fmtFileTime(lastmod) : "..."}
+            <span className="live-dot" /> สด อัปเดต {fmtFileTime(lastmod)}
           </div>
-          <div className="live-pools">
-            {live?.pools && Object.values(live.pools).map(p => (
-              <span key={p.name} className="pool-chip">
-                {p.name}: <b>{p.total != null ? p.total.toLocaleString() : "?"}</b>
-              </span>
-            ))}
-          </div>
-          {live?.memorable && live.memorable.length > 0 && (
-            <div className="live-mem">
-              <span className="live-mem-label">มีเบอร์เด็ดตอนนี้:</span>
-              {live.memorable.slice(0, 5).map(m => (
-                <span key={m.msisdn} className="mem-chip">{fmtNum(m.msisdn)}</span>
-              ))}
-            </div>
-          )}
         </section>
       )}
 
