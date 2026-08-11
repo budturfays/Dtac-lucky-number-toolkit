@@ -648,8 +648,8 @@ function App() {
               <button className="chip" onClick={() => setQuick({ ends: "888" })}>จบ 888</button>
               <button className="chip" onClick={() => setQuick({ ends: "000" })}>จบ 000</button>
               <button className="chip" onClick={() => setQuick({ ends: "0000" })}>จบ 0000</button>
-              <button className="chip" onClick={() => setQuick({ minrun: "3" })}>ตอง 888</button>
-              <button className="chip" onClick={() => setQuick({ minrun: "4" })}>สี่ตัว 8888</button>
+              <button className="chip" onClick={() => setQuick({ minrun: "3" })}>ตอง (ซ้ำ 3)</button>
+              <button className="chip" onClick={() => setQuick({ minrun: "4" })}>สี่ตัว (ซ้ำ 4)</button>
               <button className="chip" onClick={() => setQuick({ seq: "54321" })}>54321</button>
               <button className="chip" onClick={() => setQuick({ seq: "1234" })}>1234</button>
               <button className="chip" onClick={() => setQuick({ abab: true })}>1212 (ABAB)</button>
