@@ -321,7 +321,10 @@ function App() {
     if (e) e.preventDefault();
     const pool = poolOf(row);
 
-    const openListing = () => window.open(buyUrl(row), "_blank", "noopener");
+    // Open a tab IMMEDIATELY (user gesture) so the popup blocker can't kill it.
+    // Start on the listing page; if the cloud function reserves the number, the
+    // same tab is navigated to the offer URL. This gives instant feedback.
+    const tab = window.open(buyUrl(row), "_blank", "noopener");
 
     // cloud path: headless Chromium on Vercel selects the number on True's site
     const cloud = () => {
@@ -330,8 +333,13 @@ function App() {
         .then(async r => {
           const data = await r.json().catch(() => ({}));
           if (!r.ok || !data.ok) throw new Error(data.error || `cloud ${r.status}`);
-          setNotice(`✅ เลือกเบอร์ ${fmtNum(msisdn)} สำเร็จ — เปิดหน้าออฟเฟอร์เพื่อทำรายการต่อ`);
-          if (data.offerUrl) window.open(data.offerUrl, "_blank", "noopener");
+          setNotice(`✅ เลือกเบอร์ ${fmtNum(msisdn)} สำเร็จ — หน้าออฟเฟอร์เปิดแล้ว ทำรายการต่อได้เลย`);
+          // navigate the already-open tab to the offer page (number reserved)
+          if (data.offerUrl && tab && !tab.closed) {
+            try { tab.location.href = data.offerUrl; } catch (_) { window.open(data.offerUrl, "_blank", "noopener"); }
+          } else if (data.offerUrl) {
+            window.open(data.offerUrl, "_blank", "noopener");
+          }
         });
     };
 
@@ -347,10 +355,9 @@ function App() {
       });
 
     if (BUY_API_EXPLICIT) {
-      // explicit cloud URL → cloud only, listing page as fallback
+      // explicit cloud URL → cloud only, listing page already open as fallback
       cloud().catch(() => {
-        setNotice("❌ เซิร์ฟเวอร์ล้มเหลว — เปิดหน้าเบอร์แทน");
-        openListing();
+        setNotice("❌ เซิร์ฟเวอร์ล้มเหลว — เปิดหน้าเบอร์แทน (แท็บที่เปิดอยู่)");
       });
     } else {
       // env unset: prefer the local bridge (fast on this PC), then the default
@@ -358,8 +365,7 @@ function App() {
       bridge()
         .catch(() => cloud())
         .catch(() => {
-          openListing();
-          setNotice("บริดจ์และคลาวด์ไม่พร้อมใช้งาน — เปิดหน้าเบอร์แทน");
+          setNotice("บริดจ์และคลาวด์ไม่พร้อมใช้งาน — เปิดหน้าเบอร์แทน (แท็บที่เปิดอยู่)");
         });
     }
   }, []);
