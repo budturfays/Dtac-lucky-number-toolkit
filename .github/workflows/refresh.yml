@@ -41,9 +41,10 @@ jobs:
           npm run build
 
       # 3) Deploy to Firebase Hosting
-      - name: Deploy to Firebase
-        uses: w9jds/firebase-action@v15.24.0
-        with:
-          args: deploy --only hosting --project lucky-number-th
+      # Uses firebase-tools via npx in a run step so the working-directory
+      # (webapp) applies and firebase.json resolves (container actions ignore
+      # defaults.run.working-directory and would run at the repo root).
+      - name: Deploy to Firebase Hosting
+        run: npx --yes firebase-tools deploy --only hosting --project lucky-number-th
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
