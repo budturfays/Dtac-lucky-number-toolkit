@@ -190,26 +190,9 @@ function App() {
   const [notice, setNotice] = useState(null);
   const [randomPick, setRandomPick] = useState(null);
   const [live, setLive] = useState(null);
-  const [bridge, setBridge] = useState("checking"); // checking | up | down
 
   // apply runtime SEO metadata once the app mounts
   useEffect(() => { applySeo(); }, []);
-
-  // probe the local buy bridge (for the status pill + auto-buy button behavior)
-  useEffect(() => {
-    let cancelled = false;
-    const probe = async () => {
-      try {
-        const r = await bridgeFetch("/health");
-        if (!cancelled) setBridge(r.ok ? "up" : "down");
-      } catch (e) {
-        if (!cancelled) setBridge("down");
-      }
-    };
-    probe();
-    const timer = setInterval(probe, 10000);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, []);
 
   // buy click: POST to the local bridge so buy_worker.py injects the number
   // in a hidden browser, lands on the offer page, then SHOWS the window for
@@ -218,26 +201,21 @@ function App() {
     const msisdn = row?.msisdn;
     if (!msisdn) return;
     if (e) e.preventDefault();
-    if (bridge === "up") {
-      bridgeFetch("/buy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ msisdn }),
+    bridgeFetch("/buy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ msisdn }),
+    })
+      .then(async r => {
+        if (!r.ok) throw new Error(`bridge ${r.status}`);
+        setNotice(`⏳ กำลังกรอกเบอร์ ${fmtNum(msisdn)} ... หน้าต่างจะเปิดขึ้นเพื่อให้คุณเลือกซิม/โปรโมชันเอง`);
       })
-        .then(async r => {
-          if (!r.ok) throw new Error(`bridge ${r.status}`);
-          setNotice(`⏳ กำลังกรอกเบอร์ ${fmtNum(msisdn)} ... หน้าต่างจะเปิดขึ้นเพื่อให้คุณเลือกซิม/โปรโมชันเอง`);
-        })
-        .catch(() => {
-          // bridge down → fall back to opening the listing page
-          window.open(buyUrl(row), "_blank", "noopener");
-          setNotice("บริดจ์ไม่ทำงาน — เปิดหน้าเบอร์แทน (รัน python buy_bridge.py บนเครื่องนี้)");
-        });
-    } else {
-      // no bridge → just open the listing page
-      window.open(buyUrl(row), "_blank", "noopener");
-    }
-  }, [bridge]);
+      .catch(() => {
+        // bridge unreachable → fall back to opening the listing page
+        window.open(buyUrl(row), "_blank", "noopener");
+        setNotice("บริดจ์ไม่ทำงาน — เปิดหน้าเบอร์แทน (รัน python buy_bridge.py บนเครื่องนี้)");
+      });
+  }, []);
 
   // buy-me-a-coffee: Thai modal with a PromptPay QR code
   const [coffeeOpen, setCoffeeOpen] = useState(false);
@@ -359,18 +337,6 @@ function App() {
           <h1>เบอร์มงคล Finder</h1>
           <span className="sub">ค้นหาเบอร์มงคล • บันทึกเบอร์โปรดอัตโนมัติในเบราว์เซอร์</span>
         </div>
-        <span
-          className={`bridge ${bridge}`}
-          title={bridge === "up"
-            ? "ซื้ออัตโนมัติพร้อมใช้งาน (บริดจ์บนเครื่องนี้)"
-            : bridge === "down"
-              ? "บริดจ์ออฟไลน์ — ปุ่มซื้อจะเปิดแท็บตามปกติ"
-              : "กำลังตรวจสอบบริดจ์..."}
-        >
-          {bridge === "up" ? "⚡ ซื้ออัตโนมัติ: พร้อม"
-            : bridge === "down" ? "ซื้ออัตโนมัติ: ปิด"
-            : "ตรวจสอบ..."}
-        </span>
         <button className="coffee" onClick={() => setCoffeeOpen(true)} title="ซื้อกาแฟให้ผู้พัฒนา ☕">☕ ซื้อกาแฟให้</button>
       </header>
 
@@ -537,9 +503,7 @@ function App() {
                         href={buyUrl(r)}
                         target="_blank"
                         rel="noreferrer"
-                        title={bridge === "up"
-                          ? "ซื้ออัตโนมัติผ่านเครื่องนี้ (ประมวลผลในเบราว์เซอร์)"
-                          : "เปิดหน้าเบอร์"}
+                        title="ซื้อเบอร์นี้ (ลองซื้ออัตโนมัติก่อน แล้วค่อยเปิดหน้าเบอร์)"
                         onClick={e => handleBuy(e, r)}
                       >
                         ซื้อ
