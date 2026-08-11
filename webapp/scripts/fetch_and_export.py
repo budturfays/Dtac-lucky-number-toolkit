@@ -6,27 +6,27 @@ Used by the GitHub Actions workflow (Refresh lucky numbers) so the site
 gets fresh data on a schedule. Also usable locally.
 
 The API returns RANDOM samples, so we draw many samples per pool and
-dedupe to build a near-complete catalog.
+dedupe to build a near-complete catalog. Draws run concurrently so the
+scheduled GitHub Actions refresh finishes in ~2-3 min even from a US runner.
 
 Usage:
-  python scripts/fetch_and_export.py [--draws N] [--out PATH]
+  python scripts/fetch_and_export.py [--draws N] [--out PATH] [--workers N]
 """
 import argparse
+import concurrent.futures
 import json
 import os
-import sys
-import time
 import urllib.request
 import uuid
 from datetime import datetime
 
 BASE = "https://store.true.th/api"
 POOLS = ["universal", "rahu", "khanthep", "naga", "ajchang", "emperor"]
-# default draws per pool (kept moderate so a scheduled run finishes in ~3 min;
-# the API returns random samples, so this gives ~40-60% coverage per refresh,
-# and the app's static snapshot + periodic refreshes keep it reasonably current)
+# default draws per pool (moderate; the API returns random samples, so each
+# refresh adds a fresh random sample on top of the previous snapshot)
 DEFAULT_DRAWS = {"universal": 100, "rahu": 80, "khanthep": 60,
                  "naga": 50, "ajchang": 80, "emperor": 30}
+DEFAULT_WORKERS = 8
 
 
 def make_headers():
@@ -68,6 +68,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--draws", type=int, default=0,
                     help="override draws per pool (0 = use defaults)")
+    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
+                    help="concurrent draw threads (default %d)" % DEFAULT_WORKERS)
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -77,17 +79,28 @@ def main():
     merged = {}
     for pool in POOLS:
         draws = args.draws if args.draws else DEFAULT_DRAWS[pool]
-        print(f"  {pool}: {draws} draws ...", flush=True)
-        for i in range(draws):
-            try:
-                items = draw(pool)
-                for it in items:
-                    merged.setdefault(it["msisdn"], (pool, it))
-            except Exception as e:
-                # tolerate transient errors; keep going
-                if i % 20 == 0:
-                    print(f"    error at draw {i}: {e}", flush=True)
-            time.sleep(0.25)
+        print(f"  {pool}: {draws} draws, {args.workers} workers ...", flush=True)
+        local = {}
+
+        def fetch(_):
+            return draw(pool)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as ex:
+            done = 0
+            for fut in concurrent.futures.as_completed(
+                    (ex.submit(fetch, i) for i in range(draws))):
+                done += 1
+                try:
+                    for it in fut.result():
+                        local.setdefault(it["msisdn"], (pool, it))
+                except Exception as e:
+                    # tolerate transient errors; keep going
+                    if done % 50 == 0:
+                        print(f"    error at draw {done}: {e}", flush=True)
+                if done % 50 == 0:
+                    print(f"    {done}/{draws} done, {len(local)} unique", flush=True)
+        for msisdn, pair in local.items():
+            merged.setdefault(msisdn, pair)
         print(f"    -> {len(merged)} unique so far", flush=True)
 
     rows = []
