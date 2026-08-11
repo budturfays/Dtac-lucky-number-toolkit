@@ -189,8 +189,25 @@ def select_number(msisdn, headless=False, close_after=0, phase_done=None):
                                msisdn)
                     result = False
                 else:
-                    for i in range(9):
-                        boxes.nth(i + 1).fill(digits[i])
+                    # Inject the 9 digits directly via the native value setter +
+                    # input/change events in ONE evaluate call (no per-box typing).
+                    injected = page.evaluate("""(digits) => {
+                        const inputs = [...document.querySelectorAll('input.numberPosition')];
+                        if (inputs.length < 10) return false;
+                        const setter = Object.getOwnPropertyDescriptor(
+                            window.HTMLInputElement.prototype, 'value').set;
+                        for (let i = 0; i < 9; i++) {
+                            const box = inputs[i + 1]; // box 0 = fixed leading 0
+                            setter.call(box, digits[i]);
+                            box.dispatchEvent(new Event('input', { bubbles: true }));
+                            box.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                        return true;
+                    }""", digits)
+                    if not injected:
+                        _log.error("could not inject digits for %s — select manually",
+                                   msisdn)
+                        result = False
                     page.wait_for_timeout(500)
                     # exact text match: other "ค้นหาเบอร์ฟันธง..." buttons are CTA
                     # links that would redirect away from the listing
