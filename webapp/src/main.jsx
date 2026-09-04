@@ -234,6 +234,17 @@ async function proxyDraw(pool, size = 200) {
   return data.numbering;
 }
 
+async function checkAvailability(msisdn, pool) {
+  const r = await fetch(`${import.meta.env.BASE_URL}api/check`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ msisdn, pool }),
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok || !data?.ok) throw new Error(data?.error || `check HTTP ${r.status}`);
+  return data;
+}
+
 // map a raw True API item to the app's row shape (mirror fetch_and_export.py)
 function rawToRow(it) {
   const d0 = (it.detail || [])[0] || {};
@@ -276,19 +287,33 @@ function App() {
   // apply runtime SEO metadata once the app mounts
   useEffect(() => { applySeo(); }, []);
 
-  // buy click: try, in order — the Vercel cloud function (works from any
-  // device), the local bridge (fast on this PC when env unset), then opening
-  // the listing page as today.
-  const handleBuy = useCallback((row) => {
+  // Buy click: open a blank tab synchronously (so popup blockers do not
+  // interfere), check True's live catalog, then navigate only if available.
+  // The reservation still happens through the cloud buy function afterwards.
+  const handleBuy = useCallback((row, event) => {
+    event?.preventDefault();
     const msisdn = row?.msisdn;
     if (!msisdn) return;
-    // Fired from onMouseDown (before navigation), so it NEVER cancels the
-    // anchor's native target=_blank open of buyUrlSpecify(row). It just fires
-    // the cloud reservation in the background and updates the notice.
     const pool = poolOf(row);
-    setNotice(`⏳ กำลังจองเบอร์ ${fmtNum(msisdn)}... ใช้เวลาไม่กี่วินาที`);
-    cloudBuy(msisdn, pool)
+    const buyTab = window.open("about:blank", "_blank");
+    if (!buyTab) {
+      setNotice("⚠️ เบราว์เซอร์บล็อกแท็บใหม่ — อนุญาตป๊อปอัปแล้วลองอีกครั้ง");
+      return;
+    }
+    setNotice(`⏳ กำลังตรวจสอบเบอร์ ${fmtNum(msisdn)} กับทรู...`);
+    checkAvailability(msisdn, pool)
+      .then(({ available }) => {
+        if (!available) {
+          buyTab.close();
+          setNotice(`⚠️ เบอร์ ${fmtNum(msisdn)} ไม่ว่างแล้ว — ไม่เปิดหน้าค้นหาที่ไม่มีผลลัพธ์`);
+          return null;
+        }
+        buyTab.location.href = buyUrlSpecify(row);
+        setNotice(`⏳ กำลังจองเบอร์ ${fmtNum(msisdn)}... ใช้เวลาไม่กี่วินาที`);
+        return cloudBuy(msisdn, pool);
+      })
       .then(async r => {
+        if (!r) return;
         const data = await r.json().catch(() => ({}));
         if (!r.ok || !data.ok) {
           const err = new Error(data.error || `cloud ${r.status}`);
@@ -298,9 +323,12 @@ function App() {
         setNotice(`✅ จองเบอร์ ${fmtNum(msisdn)} สำเร็จ — เบอร์ถูกกรอกไว้ในแท็บที่เปิดมาแล้ว ค้นหาแล้วเลือกซิม/โปรโมชันต่อได้เลย`);
       })
       .catch(err => {
+        // If the read-only check is temporarily unavailable, preserve the old
+        // fallback and let the user try the listing page manually.
+        buyTab.location.href = buyUrlSpecify(row);
         setNotice(err && err.unavailable
-          ? `⚠️ เบอร์ ${fmtNum(msisdn)} ถูกจอง/ขายไปแล้ว — ยังเปิดหน้าเบอร์ไว้ให้`
-          : "⚠️ จองอัตโนมัติไม่สำเร็จ — แต่หน้าเบอร์เปิดไว้แล้ว (กรอกเลขรอค้นหาได้)");
+          ? `⚠️ เบอร์ ${fmtNum(msisdn)} ถูกจอง/ขายไปแล้ว — เปิดหน้าเบอร์ไว้ให้ตรวจสอบ`
+          : "⚠️ ตรวจสอบ/จองอัตโนมัติไม่สำเร็จ — เปิดหน้าเบอร์ไว้ให้ลองค้นหาเอง");
       });
   }, []);
 
@@ -626,7 +654,7 @@ function App() {
                         target="_blank"
                         rel="noreferrer"
                         title="ซื้อเบอร์นี้ (จองอัตโนมัติ + เปิดเบอร์ที่กรอกไว้)"
-                        onMouseDown={() => handleBuy(r)}
+                        onClick={(e) => handleBuy(r, e)}
                       >
                         ซื้อ
                       </a>
