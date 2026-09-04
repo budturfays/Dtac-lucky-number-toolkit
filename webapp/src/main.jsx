@@ -219,65 +219,19 @@ function bridgeFetch(path, options = {}) {
     .finally(() => clearTimeout(timer));
 }
 
-// ── in-browser refresh from True (via a public CORS proxy, no backend) ─────
-// The static numbers.json is the cold-start catalog. Visitors can trigger a
-// refresh that pulls fresh random samples straight from True's API through a
-// public CORS proxy — True's API sends no CORS headers, so the browser can't
-// call it directly. Fresh rows are upserted by msisdn on top of the snapshot.
-// Note: the proxy fetches from its own IP, not the visitor's — the win is
-// "no local PC / no cloud backend", not literally "the user's IP".
-const TRUE_API = "https://store.true.th/api/lucky-number/product-list";
-const CORS_PROXIES = [
-  u => `https://cors.eu.org/${u}`,
-  u => `https://proxy.cors.sh/${u}`,
-];
-
-function trueHeaders() {
-  const now = new Date();
-  const pad = n => String(n).padStart(2, "0");
-  const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
-             `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-  const cid = ts + Math.random().toString(16).slice(2, 6);
-  const sid = `VECOM-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${
-    typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : Math.random().toString(16).slice(2) + Date.now().toString(16)
-  }`;
-  return {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    correlationid: cid,
-    "x-correlator-id": cid,
-    sessionid: sid,
-  };
-}
-
+// ── refresh from True through our same-origin serverless endpoint ──────────
+// The static numbers.json is the cold-start catalog. The browser asks our
+// Vercel function for fresh random samples, so no public CORS proxy is needed.
 async function proxyDraw(pool, size = 200) {
-  const body = JSON.stringify({ type: pool, pagination: { page: 1, size } });
-  const headers = trueHeaders();
-  let lastErr = null;
-  for (const build of CORS_PROXIES) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15000);
-    try {
-      const r = await fetch(build(TRUE_API), {
-        method: "POST",
-        headers,
-        body,
-        signal: ctrl.signal,
-      });
-      if (!r.ok) throw new Error(`proxy HTTP ${r.status}`);
-      const data = await r.json();
-      if (!data || data.statusCode !== 200 || !Array.isArray(data.data?.numbering))
-        throw new Error("proxy returned unexpected payload");
-      return data.data.numbering;
-    } catch (e) {
-      lastErr = e;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  throw lastErr || new Error("all CORS proxies unavailable");
+  const r = await fetch(`${import.meta.env.BASE_URL}api/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pool, size }),
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok || !data?.ok || !Array.isArray(data.numbering))
+    throw new Error(data?.error || `refresh HTTP ${r.status}`);
+  return data.numbering;
 }
 
 // map a raw True API item to the app's row shape (mirror fetch_and_export.py)
@@ -397,13 +351,13 @@ function App() {
     return () => { cancelled = true; clearInterval(timer); };
   }, []);
 
-  // in-browser refresh: pull fresh samples from True via a CORS proxy and
+  // refresh: pull fresh samples from True through our serverless endpoint and
   // upsert them into the in-memory catalog (snapshot stays as cold start)
   const refreshData = useCallback(async (silent) => {
     if (refreshInFlight.current) return;
     refreshInFlight.current = true;
     setRefreshing(true);
-    if (!silent) setNotice("⏳ กำลังอัปเดตข้อมูลจากทรูผ่านตัวกลาง...");
+    if (!silent) setNotice("⏳ กำลังอัปเดตข้อมูลจากทรูผ่านเซิร์ฟเวอร์...");
     const plan = [];
     for (const [pool, draws] of [["universal", 3], ["rahu", 2], ["khanthep", 2], ["naga", 1], ["ajchang", 1], ["emperor", 1]])
       for (let i = 0; i < draws; i++) plan.push(pool);
@@ -423,7 +377,7 @@ function App() {
     refreshInFlight.current = false;
     setRefreshing(false);
     if (fresh.size === 0) {
-      setNotice("❌ อัปเดตล้มเหลว — ไม่สามารถดึงข้อมูลจากทรูผ่านตัวกลางได้ ลองอีกครั้ง");
+      setNotice("❌ อัปเดตล้มเหลว — ไม่สามารถดึงข้อมูลจากทรูผ่านเซิร์ฟเวอร์ได้ ลองอีกครั้ง");
       return;
     }
     proxyRefreshed.current = true;
@@ -649,7 +603,7 @@ function App() {
                 className="refresh-btn"
                 onClick={() => refreshData(false)}
                 disabled={refreshing}
-                title="ดึงข้อมูลสดจาก True ผ่านตัวกลาง CORS จากเบราว์เซอร์ของคุณ"
+                title="ดึงข้อมูลสดจาก True ผ่านเซิร์ฟเวอร์ของเว็บไซต์"
               >
                 {refreshing ? "⏳ กำลังอัปเดต..." : "🔄 อัปเดตข้อมูล"}
               </button>
@@ -701,3 +655,4 @@ function App() {
 }
 
 createRoot(document.getElementById("root")).render(<App />);
+
