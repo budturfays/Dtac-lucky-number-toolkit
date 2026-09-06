@@ -2,10 +2,25 @@
 import assert from "node:assert/strict";
 import { validateSnapshot } from "../src/catalog.js";
 const base = "https://lucky-number-web-lac.vercel.app";
+const maxAttempts = 3;
+const transientStatus = (status) => status === 408 || status === 425 || status === 429 || status >= 500;
+const pause = (attempt) => new Promise((resolve) => setTimeout(resolve, 500 * attempt));
 async function request(path, body) {
-  return fetch(base + path, { cache: "no-store", signal: AbortSignal.timeout(30000),
+  const options = { cache: "no-store", signal: AbortSignal.timeout(30000),
     ...(body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body) }) });
+      body: JSON.stringify(body) }) };
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(base + path, options);
+      if (!transientStatus(response.status) || attempt === maxAttempts) return response;
+    } catch (error) {
+      lastError = error;
+      if (attempt === maxAttempts) throw error;
+    }
+    await pause(attempt);
+  }
+  throw lastError ?? new Error(`Request failed after ${maxAttempts} attempts: ${path}`);
 }
 for (const route of ["/api/check", "/api/refresh"]) {
   const response = await request(route);
@@ -29,3 +44,4 @@ assert.equal(result.ok, true);
 assert.equal(result.msisdn, msisdn);
 assert.equal(typeof result.available, "boolean");
 console.log(JSON.stringify({ catalogCount: rows.length, checked: msisdn, available: result.available }));
+
