@@ -269,6 +269,27 @@ function computeRarity(list) {
 }
 
 // ── components ──────────────────────────────────────────────────────────────
+function ChoiceButtons({ ariaLabel, value, onChange, options, className = "" }) {
+  return (
+    <div className={`choice-buttons ${className}`.trim()} role="group" aria-label={ariaLabel}>
+      {options.map(option => {
+        const selected = value === option.value;
+        return (
+          <button
+            key={option.value || "all"}
+            type="button"
+            className={selected ? "filter-choice selected" : "filter-choice"}
+            aria-pressed={selected}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function App() {
   const [numbers, setNumbers] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
@@ -609,18 +630,28 @@ function App() {
                 </label>
               </div>
               <div className="search-actions">
-                <select aria-label="ระดับเลขซ้ำ" className="filter-select" value={filters.minrun || ""} onChange={e => setFilters({ ...filters, minrun: e.target.value })}>
-                  <option value="">ซ้ำเลขทุกระดับ</option>
-                  <option value="2">มีเลขคู่ (88)</option>
-                  <option value="3">มีเลขตอง (888)</option>
-                  <option value="4">มีเลขสี่ตัว (8888)</option>
-                </select>
-                <select aria-label="ราคาแพ็กเกจ" className="filter-select" value={filters.price || ""} onChange={e => setFilters({ ...filters, price: e.target.value })}>
-                  <option value="">ราคาทั้งหมด</option>
-                  <option value="under500">ต่ำกว่า 500</option>
-                  <option value="under1000">ต่ำกว่า 1,000</option>
-                  <option value="under1500">ต่ำกว่า 1,500</option>
-                </select>
+                <div className="choice-group">
+                  <span className="choice-label">ระดับเลขซ้ำ</span>
+                  <ChoiceButtons ariaLabel="ระดับเลขซ้ำ" value={filters.minrun || ""}
+                    onChange={value => setFilters({ ...filters, minrun: value })}
+                    options={[
+                      { value: "", label: "ทุกระดับ" },
+                      { value: "2", label: "คู่ 88" },
+                      { value: "3", label: "ตอง 888" },
+                      { value: "4", label: "สี่ตัว 8888" },
+                    ]} />
+                </div>
+                <div className="choice-group">
+                  <span className="choice-label">ราคาแพ็กเกจ</span>
+                  <ChoiceButtons ariaLabel="ราคาแพ็กเกจ" value={filters.price || ""}
+                    onChange={value => setFilters({ ...filters, price: value })}
+                    options={[
+                      { value: "", label: "ทุกราคา" },
+                      { value: "under500", label: "ต่ำกว่า 500" },
+                      { value: "under1000", label: "ต่ำกว่า 1,000" },
+                      { value: "under1500", label: "ต่ำกว่า 1,500" },
+                    ]} />
+                </div>
                 <button className="btn" onClick={() => { setFilters({}); }}>ล้างค่า</button>
                 <button className={showFavs ? "btn active" : "btn"} onClick={() => setShowFavs(!showFavs)}>
                   {showFavs ? "แสดงทั้งหมด" : "เบอร์ที่บันทึก"}
@@ -648,51 +679,57 @@ function App() {
                 </label>
                 <label className="field">
                   <span>เครือข่าย / หมวด</span>
-                  <select aria-label="เครือข่ายหรือหมวด" value={filters.pool || ""} onChange={e => setFilters({ ...filters, pool: e.target.value })}>
-                    <option value="">ทุกหมวด</option>
-                    <option value="universal">ทรู — รวมทุกหมวด</option>
-                    <option value="rahu">พระราหู</option>
-                    <option value="khanthep">ขุนแผน</option>
-                    <option value="naga">พญานาค</option>
-                    <option value="ajchang">หมอช้าง</option>
-                    <option value="emperor">จักรพรรดิ</option>
-                  </select>
+                  <ChoiceButtons ariaLabel="เครือข่ายหรือหมวด" value={filters.pool || ""}
+                    onChange={value => setFilters({ ...filters, pool: value })}
+                    options={[
+                      { value: "", label: "ทุกหมวด" },
+                      { value: "universal", label: "ทรูรวม" },
+                      { value: "rahu", label: "พระราหู" },
+                      { value: "khanthep", label: "ขุนแผน" },
+                      { value: "naga", label: "พญานาค" },
+                      { value: "ajchang", label: "หมอช้าง" },
+                      { value: "emperor", label: "จักรพรรดิ" },
+                    ]} />
                 </label>
                 <label className="field">
                   <span>รูปแบบ</span>
-                  <select aria-label="รูปแบบเบอร์" value={filters.pattern || ""} onChange={e => setFilters({ ...filters, pattern: e.target.value })}>
-                    <option value="">ทุกรูปแบบ</option>
-                    <option value="pair">เลขคู่</option>
-                    <option value="triple">เลขตอง</option>
-                    <option value="quad">เลขสี่ตัว</option>
-                    <option value="abab">ABAB</option>
-                    <option value="aabb">AABB</option>
-                    <option value="abba">ABBA</option>
-                    <option value="mirror">เลขสะท้อน</option>
-                    <option value="sequence">เลขเรียง 4 ตัวขึ้นไป</option>
-                  </select>
+                  <ChoiceButtons ariaLabel="รูปแบบเบอร์" value={filters.pattern || ""}
+                    onChange={value => setFilters({ ...filters, pattern: value })}
+                    options={[
+                      { value: "", label: "ทุกรูปแบบ" },
+                      { value: "pair", label: "เลขคู่" },
+                      { value: "triple", label: "เลขตอง" },
+                      { value: "quad", label: "เลขสี่ตัว" },
+                      { value: "abab", label: "ABAB" },
+                      { value: "aabb", label: "AABB" },
+                      { value: "abba", label: "ABBA" },
+                      { value: "mirror", label: "เลขสะท้อน" },
+                      { value: "sequence", label: "เลขเรียง 4+" },
+                    ]} />
                 </label>
                 <label className="field">
                   <span>ราคาต่ำสุด / สูงสุด</span>
-                  <span className="range-fields">
+                  <div className="range-fields">
                     <input className="search-input" type="number" min="0" step="1" aria-label="ราคาต่ำสุด"
                       placeholder="ต่ำสุด" value={filters.priceMin ?? ""} onChange={e => setFilters({ ...filters, priceMin: e.target.value })} />
                     <input className="search-input" type="number" min="0" step="1" aria-label="ราคาสูงสุด"
                       placeholder="สูงสุด" value={filters.priceMax ?? ""} onChange={e => setFilters({ ...filters, priceMax: e.target.value })} />
-                  </span>
+                  </div>
                 </label>
                 <label className="field">
                   <span>คะแนนด้านที่สนใจ</span>
-                  <span className="score-fields">
-                    <select aria-label="ด้านคะแนน" value={filters.scoreType || "total"} onChange={e => setFilters({ ...filters, scoreType: e.target.value })}>
-                      <option value="total">รวม</option>
-                      <option value="work">การงาน</option>
-                      <option value="finance">การเงิน</option>
-                      <option value="love">ความรัก</option>
-                    </select>
+                  <div className="score-fields">
+                    <ChoiceButtons className="score-choice-buttons" ariaLabel="ด้านคะแนน" value={filters.scoreType || "total"}
+                      onChange={value => setFilters({ ...filters, scoreType: value })}
+                      options={[
+                        { value: "total", label: "รวม" },
+                        { value: "work", label: "การงาน" },
+                        { value: "finance", label: "การเงิน" },
+                        { value: "love", label: "ความรัก" },
+                      ]} />
                     <input className="search-input" type="number" min="0" max="20" step="1" aria-label="คะแนนขั้นต่ำ"
                       placeholder="คะแนนขั้นต่ำ" value={filters.scoreMin ?? ""} onChange={e => setFilters({ ...filters, scoreMin: e.target.value })} />
-                  </span>
+                  </div>
                 </label>
                 <label className="field">
                   <span>ซ่อนรูปแบบ</span>
@@ -701,10 +738,12 @@ function App() {
                 </label>
                 <label className="field">
                   <span>ความสดของข้อมูล</span>
-                  <select aria-label="ความสดของข้อมูล" value={filters.freshness || ""} onChange={e => setFilters({ ...filters, freshness: e.target.value })}>
-                    <option value="">ทั้งแคตตาล็อก</option>
-                    <option value="sampled">เฉพาะตัวอย่างที่ดึงล่าสุด</option>
-                  </select>
+                  <ChoiceButtons ariaLabel="ความสดของข้อมูล" value={filters.freshness || ""}
+                    onChange={value => setFilters({ ...filters, freshness: value })}
+                    options={[
+                      { value: "", label: "ทั้งแคตตาล็อก" },
+                      { value: "sampled", label: "ตัวอย่างล่าสุด" },
+                    ]} />
                 </label>
               </div>
             </details>
@@ -724,15 +763,16 @@ function App() {
             </div>
 
             <div className="sort-row">
-              <label htmlFor="sort-order">เรียงตาม</label>
-              <select id="sort-order" value={sort} onChange={e => setSort(e.target.value)}>
-                <option value="repeat">เลขซ้ำมากที่สุด</option>
-                <option value="memorable">จำง่าย</option>
-                <option value="rarity">รูปแบบหายาก</option>
-                <option value="rare_mem">หายากและจำง่าย</option>
-                <option value="value">คะแนนต่อราคา</option>
-                <option value="price">ราคาต่ำสุด</option>
-              </select>
+              <span className="sort-label">เรียงตาม</span>
+              <ChoiceButtons ariaLabel="เรียงตาม" value={sort} onChange={setSort}
+                options={[
+                  { value: "repeat", label: "เลขซ้ำมากที่สุด" },
+                  { value: "memorable", label: "จำง่าย" },
+                  { value: "rarity", label: "รูปแบบหายาก" },
+                  { value: "rare_mem", label: "หายากและจำง่าย" },
+                  { value: "value", label: "คะแนนต่อราคา" },
+                  { value: "price", label: "ราคาต่ำสุด" },
+                ]} />
               <button className="random" onClick={randomPickClick}>สุ่มหนึ่งเบอร์</button>
             </div>
           </section>
@@ -812,4 +852,5 @@ function App() {
 }
 
 createRoot(document.getElementById("root")).render(<App />);
+
 
