@@ -8,6 +8,19 @@ test("missing price never becomes a free number", () => {
   assert.throws(() => rawToRow({ msisdn: row.msisdn, detail: [{ rc: null }] }, "universal"));
   assert.equal(rawToRow({ msisdn: row.msisdn, detail: [{ rc: 399 }] }, "rahu").pools, "rahu");
 });
+test("raw True categories are retained for score filters", () => {
+  const converted = rawToRow({
+    msisdn: row.msisdn,
+    detail: [{ rc: 399 }],
+    luckyType: [
+      { name: "การงาน", star: 5 },
+      { name: "การเงิน", star: 4 },
+      { name: "ความรัก", star: 3 },
+    ],
+  }, "universal");
+  assert.deepEqual(converted.scores, { work: 5, finance: 4, love: 3 });
+  assert.equal(converted.stars, 12);
+});
 test("snapshot requires valid, nonempty, unique rows matching metadata", () => {
   assert.equal(validateSnapshot([row], meta)[0], row);
   for (const [rows, metadata] of [[[], { ...meta, count: 0 }], [[row], {}],
@@ -20,7 +33,7 @@ test("snapshot requires valid, nonempty, unique rows matching metadata", () => {
 test("manual samples supplement snapshots but never freeze later updates", () => {
   const updated = { ...row, price_baht_month: 499 };
   const samples = new Map([[row.msisdn, { row: updated, fetchedAt: 200 }]]);
-  assert.deepEqual(mergeCatalog([row], samples, 100), [updated]);
+  assert.deepEqual(mergeCatalog([row], samples, 100), [{ ...updated, sampledAt: 200 }]);
   assert.deepEqual(mergeCatalog([row], samples, 300), [row]);
   assert.deepEqual(mergeCatalog([], samples, 300), []);
   assert.deepEqual(mergeCatalog([row], samples, 200), [row]);

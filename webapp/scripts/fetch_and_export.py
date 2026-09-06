@@ -95,6 +95,20 @@ def star_sum(lt_str):
         return 0
 
 
+def score_breakdown(lucky_types):
+    scores = {}
+    for entry in lucky_types or []:
+        name = str(entry.get("name") or "")
+        value = int(entry.get("star") or 0)
+        if "การงาน" in name:
+            scores["work"] = value
+        if "การเงิน" in name:
+            scores["finance"] = value
+        if "ความรัก" in name:
+            scores["love"] = value
+    return scores
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--draws", type=int, default=0,
@@ -143,11 +157,13 @@ def main():
     rows = []
     for msisdn, (pool, it) in merged.items():
         d0 = (it.get("detail") or [{}])[0]
+        lucky_types = it.get("luckyType", [])
         rows.append({
             "msisdn": msisdn,
             "price_baht_month": int(d0.get("rc") or 0),
             "pools": pool,
             "stars": star_sum(json.dumps(it.get("luckyType", []), ensure_ascii=False)),
+            "scores": score_breakdown(lucky_types),
         })
     rows.sort(key=lambda r: r["msisdn"])
     if not rows:
