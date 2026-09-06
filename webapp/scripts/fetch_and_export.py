@@ -6,7 +6,7 @@ Used by the GitHub Actions workflow (Refresh lucky numbers) so the site
 gets fresh data on a schedule. Also usable locally.
 
 The API returns RANDOM samples, so we draw many samples per pool and
-dedupe to build a near-complete catalog. Draws run concurrently so the
+dedupe to build a sampled catalog (not guaranteed complete). Draws run concurrently so the
 scheduled GitHub Actions refresh finishes in ~2-3 min even from a US runner.
 
 Usage:
@@ -16,6 +16,8 @@ import argparse
 import concurrent.futures
 import json
 import os
+import math
+import re
 import urllib.request
 import uuid
 from datetime import datetime
@@ -53,7 +55,36 @@ def draw(pool, size=200):
                                  headers=make_headers(), method="POST")
     with urllib.request.urlopen(req, timeout=30) as r:
         resp = json.loads(r.read().decode())
-    return (resp.get("data") or {}).get("numbering") or []
+    return parse_numbering(resp)
+
+
+def parse_numbering(resp):
+    if not isinstance(resp, dict) or resp.get("statusCode") != 200:
+        raise ValueError("unexpected True response")
+    data = resp.get("data")
+    if not isinstance(data, dict):
+        raise ValueError("missing True data")
+    numbering = data.get("numbering")
+    total = (data.get("pagination") or {}).get("totalItem")
+    if numbering is None and "numbering" in data and total == 0:
+        return []
+    if not isinstance(numbering, list) or (not numbering and total != 0):
+        raise ValueError("malformed numbering response")
+    for item in numbering:
+        if not isinstance(item, dict) or not re.fullmatch(r"0\d{9}", str(item.get("msisdn", ""))):
+            raise ValueError("invalid number")
+        details = item.get("detail")
+        if not isinstance(details, list) or not details or not isinstance(details[0], dict):
+            raise ValueError("missing price")
+        price = details[0].get("rc")
+        if isinstance(price, bool) or not isinstance(price, (int, float)) or not math.isfinite(price) or price < 0:
+            raise ValueError("invalid price")
+    return numbering
+
+
+def ensure_pool_health(pool, succeeded, draws):
+    if draws <= 0 or succeeded / draws < 0.8:
+        raise RuntimeError(f"{pool}: only {succeeded}/{draws} valid responses; refusing partial deployment")
 
 
 def star_sum(lt_str):
@@ -72,6 +103,8 @@ def main():
                     help="concurrent draw threads (default %d)" % DEFAULT_WORKERS)
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
+    if args.draws < 0 or not 1 <= args.workers <= 16:
+        ap.error("draws must be nonnegative and workers must be 1..16")
 
     here = os.path.dirname(os.path.abspath(__file__))
     out = args.out or os.path.join(here, "..", "public", "data", "numbers.json")
@@ -81,6 +114,7 @@ def main():
         draws = args.draws if args.draws else DEFAULT_DRAWS[pool]
         print(f"  {pool}: {draws} draws, {args.workers} workers ...", flush=True)
         local = {}
+        succeeded = 0
 
         def fetch(_):
             return draw(pool)
@@ -91,14 +125,17 @@ def main():
                     (ex.submit(fetch, i) for i in range(draws))):
                 done += 1
                 try:
-                    for it in fut.result():
+                    items = fut.result()
+                    for it in items:
                         local.setdefault(it["msisdn"], (pool, it))
+                    succeeded += 1
                 except Exception as e:
                     # tolerate transient errors; keep going
                     if done % 50 == 0:
                         print(f"    error at draw {done}: {e}", flush=True)
                 if done % 50 == 0:
                     print(f"    {done}/{draws} done, {len(local)} unique", flush=True)
+        ensure_pool_health(pool, succeeded, draws)
         for msisdn, pair in local.items():
             merged.setdefault(msisdn, pair)
         print(f"    -> {len(merged)} unique so far", flush=True)
@@ -113,7 +150,10 @@ def main():
             "stars": star_sum(json.dumps(it.get("luckyType", []), ensure_ascii=False)),
         })
     rows.sort(key=lambda r: r["msisdn"])
+    if not rows:
+        raise RuntimeError("empty catalog; refusing to overwrite or deploy")
 
+    out = os.path.abspath(out)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         json.dump(rows, f, separators=(",", ":"))
