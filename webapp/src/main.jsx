@@ -426,11 +426,15 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <div>
-          <h1>หาเบอร์มงคล</h1>
-          <span className="sub">ค้นหาจากเลขท้าย รูปแบบ และราคาแพ็กเกจ</span>
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">๙</span>
+          <div>
+            <span className="eyebrow">คลังเบอร์ทรู–ดีแทค</span>
+            <h1>หาเบอร์มงคล</h1>
+            <span className="sub">คัดเบอร์จากรูปแบบ เลขท้าย และงบรายเดือน</span>
+          </div>
         </div>
-        <button className="coffee" onClick={() => setCoffeeOpen(true)} title="เลี้ยงกาแฟ">สนับสนุนผู้พัฒนา</button>
+        <button className="coffee" onClick={() => setCoffeeOpen(true)} title="เลี้ยงกาแฟ">สนับสนุนเว็บไซต์</button>
       </header>
 
       {coffeeOpen && (
@@ -481,11 +485,14 @@ function App() {
 
       {lastmod && (
         <section className="livebar card">
-          <div className="live-title">
-            ข้อมูลชุดล่าสุด {fmtFileTime(lastmod)}
+          <span className="status-dot" aria-hidden="true"></span>
+          <div className="live-copy">
+            <div className="live-title">
+              อัปเดตล่าสุด <time dateTime={lastmod}>{fmtFileTime(lastmod)}</time>
             {snapshotStale ? " — ข้อมูลเกิน 8 ชั่วโมง" : ""}
+            </div>
+            <p>รวบรวมใหม่ทุก 6 ชั่วโมง · เช็กสถานะกับทรูก่อนจองทุกครั้ง</p>
           </div>
-          <p>ข้อมูลสุ่มรวบรวมทุก 6 ชั่วโมง ตรวจสอบสถานะอีกครั้งก่อนจอง</p>
         </section>
       )}
 
@@ -494,7 +501,13 @@ function App() {
       ) : (
         <>
           <section className="filters card" aria-label="ค้นหาเบอร์">
-            <h2>ค้นหาเบอร์</h2>
+            <div className="section-head">
+              <div>
+                <span className="section-index">01</span>
+                <h2>ค้นหาเบอร์ที่ใช่</h2>
+              </div>
+              <p>กรอกเฉพาะเงื่อนไขที่ต้องการ ระบบจะคัดผลลัพธ์ทันที</p>
+            </div>
             <div className="searchbar">
               <div className="search-row">
                 <label className="field"><span>เลขท้าย</span>
@@ -599,6 +612,12 @@ function App() {
           )}
 
           <section className="results">
+            <div className="results-head">
+              <div>
+                <span className="section-index">02</span>
+                <h2>เบอร์ที่พบ</h2>
+              </div>
+            </div>
             <div className="count">
               <strong>{results.length.toLocaleString()} <span>เบอร์</span></strong>
               {sampleFetchedAt && (
