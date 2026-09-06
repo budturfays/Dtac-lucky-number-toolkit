@@ -6,6 +6,7 @@ import csv
 import json
 import os
 import sys
+from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -50,7 +51,7 @@ def main():
             rows.append({
                 "msisdn": r["msisdn"],
                 "price_baht_month": int(r["price_baht_month"]) if (r.get("price_baht_month") or "").isdigit() else 0,
-                "pools": r.get("pools") or r.get("pool") or "",
+                "pools": r.get("pools") or r.get("pool(s)") or r.get("pool") or "",
                 "stars": star_sum(r.get("luckyTypes") or ""),
             })
     out_dir = os.path.join(ROOT, "public", "data")
@@ -60,6 +61,11 @@ def main():
         json.dump(rows, f, separators=(",", ":"))
     size_mb = os.path.getsize(out) / 1e6
     print(f"Wrote {len(rows)} numbers -> {out} ({size_mb:.1f} MB)")
+    # Match the web app's snapshot contract; use source freshness, not export time.
+    with open(os.path.join(out_dir, "meta.json"), "w", encoding="utf-8") as f:
+        json.dump({"count": len(rows),
+                   "lastmod": datetime.fromtimestamp(os.path.getmtime(src)).astimezone().isoformat(timespec="seconds")},
+                  f, separators=(",", ":"))
 
 
 if __name__ == "__main__":
