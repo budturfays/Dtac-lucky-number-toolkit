@@ -1,5 +1,5 @@
 import unittest
-from fetch_and_export import parse_numbering, ensure_pool_health
+from fetch_and_export import parse_numbering, ensure_pool_health, score_breakdown
 
 
 class ExportSafetyTests(unittest.TestCase):
@@ -28,6 +28,13 @@ class ExportSafetyTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 ensure_pool_health("universal", succeeded, 10)
         ensure_pool_health("universal", 8, 10)
+
+    def test_score_breakdown_keeps_supported_categories(self):
+        self.assertEqual(score_breakdown([
+            {"name": "การงาน", "star": 5},
+            {"name": "การเงิน", "star": 4},
+            {"name": "ความรัก", "star": 3},
+        ]), {"work": 5, "finance": 4, "love": 3})
 
 
 if __name__ == "__main__":

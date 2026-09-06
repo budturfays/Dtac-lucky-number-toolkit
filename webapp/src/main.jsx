@@ -123,12 +123,52 @@ function hasABAB(m) {
   return false;
 }
 
+function hasAABB(m) {
+  for (let i = 0; i < m.length - 3; i++) {
+    if (m[i] === m[i + 1] && m[i + 2] === m[i + 3] && m[i] !== m[i + 2]) return true;
+  }
+  return false;
+}
+
+function hasABBA(m) {
+  for (let i = 0; i < m.length - 3; i++) {
+    if (m[i] === m[i + 3] && m[i + 1] === m[i + 2] && m[i] !== m[i + 1]) return true;
+  }
+  return false;
+}
+
+function hasMirror(m) {
+  return m.slice(0, 5) === m.slice(5).split("").reverse().join("");
+}
+
+function patternMatches(m, pattern) {
+  if (!pattern) return true;
+  if (pattern === "pair") return maxrun(m) >= 2;
+  if (pattern === "triple") return maxrun(m) >= 3;
+  if (pattern === "quad") return maxrun(m) >= 4;
+  if (pattern === "abab") return hasABAB(m);
+  if (pattern === "aabb") return hasAABB(m);
+  if (pattern === "abba") return hasABBA(m);
+  if (pattern === "mirror") return hasMirror(m);
+  if (pattern === "sequence") return seqLen(m) >= 4;
+  return true;
+}
+
+function scoreFor(n, type) {
+  if (type === "total") return Number(n.stars) || 0;
+  return Number(n.scores?.[type]) || 0;
+}
+
 function starSum(n) {
   return n.stars || 0;
 }
 
 function matches(n, f) {
   const m = n.msisdn;
+  const exact = (f.exact || "").replace(/[s-]/g, "");
+  const prefix = (f.prefix || "").replace(/[s-]/g, "");
+  if (exact && m !== exact) return false;
+  if (prefix && !m.startsWith(prefix)) return false;
   if (f.ends && !m.endsWith(f.ends)) return false;
   if (f.seq && !m.includes(f.seq)) return false;
   if (f.abab && !hasABAB(m)) return false;
@@ -144,6 +184,13 @@ function matches(n, f) {
     const ex = f.exclude.split(/[\s,]+/).filter(Boolean);
     if (ex.some(d => m.includes(d))) return false;
   }
+  if (f.excludePattern) {
+    const excluded = f.excludePattern.split(/[\s,]+/).filter(Boolean);
+    if (excluded.some(pattern => patternMatches(m, pattern))) return false;
+  }
+  if (f.pattern && !patternMatches(m, f.pattern)) return false;
+  if (f.pool && !(n.pools || "").split(",").map(pool => pool.trim()).includes(f.pool)) return false;
+  if (f.freshness === "sampled" && !n.sampledAt) return false;
   if (f.minrun && maxrun(m) < f.minrun) return false;
   if (f.price) {
     const pr = parseInt(n.price_baht_month, 10);
@@ -151,6 +198,10 @@ function matches(n, f) {
     if (f.price === "under1000" && pr >= 1000) return false;
     if (f.price === "under1500" && pr >= 1500) return false;
   }
+  const price = Number(n.price_baht_month);
+  if (f.priceMin !== "" && f.priceMin !== undefined && (!Number.isFinite(price) || price < Number(f.priceMin))) return false;
+  if (f.priceMax !== "" && f.priceMax !== undefined && (!Number.isFinite(price) || price > Number(f.priceMax))) return false;
+  if (f.scoreMin !== "" && f.scoreMin !== undefined && scoreFor(n, f.scoreType || "total") < Number(f.scoreMin)) return false;
   return true;
 }
 
@@ -229,7 +280,8 @@ function App() {
   });
   const [filters, setFilters] = useState(() => {
     const query = new URLSearchParams(window.location.search).get("s")?.trim();
-    return query && /^\d{1,10}$/.test(query) ? { seq: query } : {};
+    if (query && /^\d{10}$/.test(query)) return { exact: query };
+    return query && /^\d{1,9}$/.test(query) ? { seq: query } : {};
   });
   const [sort, setSort] = useState("repeat");
   const [showFavs, setShowFavs] = useState(false);
@@ -575,6 +627,87 @@ function App() {
                 </button>
               </div>
             </div>
+
+            <details className="advanced-filters">
+              <summary>
+                <span>ตัวกรองเพิ่มเติม</span>
+                <small>ราคา · เครือข่าย · รูปแบบ · คะแนน</small>
+              </summary>
+              <div className="advanced-grid">
+                <label className="field">
+                  <span>ค้นหาเบอร์เต็ม</span>
+                  <input className="search-input" inputMode="numeric" maxLength={10}
+                    aria-label="ค้นหาเบอร์เต็ม" placeholder="เช่น 0803655552"
+                    value={filters.exact || ""} onChange={e => setFilters({ ...filters, exact: e.target.value })} />
+                </label>
+                <label className="field">
+                  <span>เลขนำหน้า</span>
+                  <input className="search-input" inputMode="numeric" maxLength={10}
+                    aria-label="เลขนำหน้า" placeholder="เช่น 080"
+                    value={filters.prefix || ""} onChange={e => setFilters({ ...filters, prefix: e.target.value })} />
+                </label>
+                <label className="field">
+                  <span>เครือข่าย / หมวด</span>
+                  <select aria-label="เครือข่ายหรือหมวด" value={filters.pool || ""} onChange={e => setFilters({ ...filters, pool: e.target.value })}>
+                    <option value="">ทุกหมวด</option>
+                    <option value="universal">ทรู — รวมทุกหมวด</option>
+                    <option value="rahu">พระราหู</option>
+                    <option value="khanthep">ขุนแผน</option>
+                    <option value="naga">พญานาค</option>
+                    <option value="ajchang">หมอช้าง</option>
+                    <option value="emperor">จักรพรรดิ</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>รูปแบบ</span>
+                  <select aria-label="รูปแบบเบอร์" value={filters.pattern || ""} onChange={e => setFilters({ ...filters, pattern: e.target.value })}>
+                    <option value="">ทุกรูปแบบ</option>
+                    <option value="pair">เลขคู่</option>
+                    <option value="triple">เลขตอง</option>
+                    <option value="quad">เลขสี่ตัว</option>
+                    <option value="abab">ABAB</option>
+                    <option value="aabb">AABB</option>
+                    <option value="abba">ABBA</option>
+                    <option value="mirror">เลขสะท้อน</option>
+                    <option value="sequence">เลขเรียง 4 ตัวขึ้นไป</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>ราคาต่ำสุด / สูงสุด</span>
+                  <span className="range-fields">
+                    <input className="search-input" type="number" min="0" step="1" aria-label="ราคาต่ำสุด"
+                      placeholder="ต่ำสุด" value={filters.priceMin ?? ""} onChange={e => setFilters({ ...filters, priceMin: e.target.value })} />
+                    <input className="search-input" type="number" min="0" step="1" aria-label="ราคาสูงสุด"
+                      placeholder="สูงสุด" value={filters.priceMax ?? ""} onChange={e => setFilters({ ...filters, priceMax: e.target.value })} />
+                  </span>
+                </label>
+                <label className="field">
+                  <span>คะแนนด้านที่สนใจ</span>
+                  <span className="score-fields">
+                    <select aria-label="ด้านคะแนน" value={filters.scoreType || "total"} onChange={e => setFilters({ ...filters, scoreType: e.target.value })}>
+                      <option value="total">รวม</option>
+                      <option value="work">การงาน</option>
+                      <option value="finance">การเงิน</option>
+                      <option value="love">ความรัก</option>
+                    </select>
+                    <input className="search-input" type="number" min="0" max="20" step="1" aria-label="คะแนนขั้นต่ำ"
+                      placeholder="คะแนนขั้นต่ำ" value={filters.scoreMin ?? ""} onChange={e => setFilters({ ...filters, scoreMin: e.target.value })} />
+                  </span>
+                </label>
+                <label className="field">
+                  <span>ซ่อนรูปแบบ</span>
+                  <input className="search-input" aria-label="ซ่อนรูปแบบ" placeholder="เช่น quad, abba"
+                    value={filters.excludePattern || ""} onChange={e => setFilters({ ...filters, excludePattern: e.target.value })} />
+                </label>
+                <label className="field">
+                  <span>ความสดของข้อมูล</span>
+                  <select aria-label="ความสดของข้อมูล" value={filters.freshness || ""} onChange={e => setFilters({ ...filters, freshness: e.target.value })}>
+                    <option value="">ทั้งแคตตาล็อก</option>
+                    <option value="sampled">เฉพาะตัวอย่างที่ดึงล่าสุด</option>
+                  </select>
+                </label>
+              </div>
+            </details>
 
             <div className="quick-row">
               <span className="quick-label">ค้นหาด่วน</span>

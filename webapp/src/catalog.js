@@ -11,8 +11,16 @@ export function rawToRow(item, pool) {
       (item.luckyType != null && !Array.isArray(item.luckyType))) {
     throw new Error("invalid pricing data");
   }
+  const scores = {};
+  for (const entry of item.luckyType || []) {
+    const name = String(entry?.name || "");
+    const value = Number(entry?.star) || 0;
+    if (name.includes("การงาน")) scores.work = value;
+    if (name.includes("การเงิน")) scores.finance = value;
+    if (name.includes("ความรัก")) scores.love = value;
+  }
   const row = { msisdn: item.msisdn, price_baht_month: price, pools: pool,
-    stars: (item.luckyType || []).reduce((sum, entry) => sum + (Number(entry?.star) || 0), 0) };
+    stars: (item.luckyType || []).reduce((sum, entry) => sum + (Number(entry?.star) || 0), 0), scores };
   if (!validRow(row)) throw new Error("invalid number");
   return row;
 }
@@ -31,7 +39,7 @@ export function validateSnapshot(rows, meta) {
 export function mergeCatalog(snapshot, samples, snapshotAt) {
   const merged = new Map(snapshot.map(row => [row.msisdn, row]));
   for (const { row, fetchedAt } of samples.values()) {
-    if (fetchedAt > snapshotAt) merged.set(row.msisdn, row);
+    if (fetchedAt > snapshotAt) merged.set(row.msisdn, { ...row, sampledAt: fetchedAt });
   }
   return [...merged.values()];
 }
