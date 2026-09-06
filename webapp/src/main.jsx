@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { validRow, validateSnapshot, mergeCatalog, parseFavorites, fetchJson, rawToRow } from "./catalog.js";
+import { TrueHandoff } from "./TrueHandoff.js";
 
 // ── SEO (runtime metadata; static tags live in index.html) ────────────────
 const SEO_TITLE = "หาเบอร์มงคล – ค้นหาเบอร์สวยและเบอร์มงคล";
@@ -334,7 +335,7 @@ function App() {
     if (refreshInFlight.current) return;
     refreshInFlight.current = true;
     setRefreshing(true);
-    if (!silent) setNotice("⏳ กำลังดึงตัวอย่างเบอร์ล่าสุดจากทรู...");
+    if (!silent) setNotice("กำลังดึงเบอร์ล่าสุดจากทรู…");
     try {
       const plan = ["universal", "universal", "universal", "rahu", "rahu",
         "khanthep", "khanthep", "naga", "ajchang", "emperor"];
@@ -354,9 +355,9 @@ function App() {
       for (const row of fresh.values()) state.samples.set(row.msisdn, { row, fetchedAt });
       setNumbers(mergeCatalog(state.rows, state.samples, state.timestamp));
       setSampleFetchedAt(new Date(fetchedAt));
-      if (!silent) setNotice(`✅ ดึงตัวอย่างล่าสุด ${fresh.size.toLocaleString()} เบอร์${failed ? ` (บางส่วนไม่สำเร็จ ${failed}/${plan.length})` : ""} — ตรวจสอบเบอร์ก่อนซื้ออีกครั้ง`);
+      if (!silent) setNotice(`ดึงตัวอย่างล่าสุด ${fresh.size.toLocaleString()} เบอร์${failed ? ` (บางส่วนไม่สำเร็จ ${failed}/${plan.length})` : ""} — ตรวจสอบเบอร์ก่อนซื้ออีกครั้ง`);
     } catch {
-      if (!silent) setNotice("❌ ดึงข้อมูลไม่สำเร็จ ข้อมูลเดิมยังอยู่ กรุณาลองอีกครั้ง");
+      if (!silent) setNotice("ดึงข้อมูลไม่สำเร็จ ข้อมูลเดิมยังอยู่ กรุณาลองอีกครั้ง");
     } finally {
       refreshInFlight.current = false;
       setRefreshing(false);
@@ -427,9 +428,9 @@ function App() {
       <header className="header">
         <div>
           <h1>หาเบอร์มงคล</h1>
-          <span className="sub">ค้นหาเบอร์มงคล • ข้อมูลเป็นภาพรวมตามรอบ • ตรวจสอบก่อนซื้อ</span>
+          <span className="sub">ค้นหาจากเลขท้าย รูปแบบ และราคาแพ็กเกจ</span>
         </div>
-        <button className="coffee" onClick={() => setCoffeeOpen(true)} title="เลี้ยงกาแฟ">☕ เลี้ยงกาแฟ</button>
+        <button className="coffee" onClick={() => setCoffeeOpen(true)} title="เลี้ยงกาแฟ">สนับสนุนผู้พัฒนา</button>
       </header>
 
       {coffeeOpen && (
@@ -437,7 +438,7 @@ function App() {
           onClose={() => setCoffeeOpen(false)}
           onClick={event => { if (event.target === event.currentTarget) setCoffeeOpen(false); }}>
           <div className="card" onClick={e => e.stopPropagation()}>
-            <h3>☕ เลี้ยงกาแฟ</h3>
+            <h3>สนับสนุนผู้พัฒนา</h3>
             <img
               className="qr-img"
               src="https://promptpay.io/0869532969"
@@ -447,7 +448,7 @@ function App() {
             />
             <p>
               สแกน QR พร้อมเพย์ เพื่อส่งกำลังใจให้ผู้พัฒนา<br />
-              ขอบคุณที่ใช้หาเบอร์มงคล! 🙏
+              ขอบคุณที่สนับสนุน
             </p>
             <button onClick={() => setCoffeeOpen(false)}>ปิด</button>
           </div>
@@ -462,19 +463,14 @@ function App() {
           <p>{purchase.status === "checking" ? "กำลังตรวจสอบกับทรู..."
             : purchase.status === "error" ? "ยังตรวจสอบไม่ได้ กรุณาลองอีกครั้ง"
             : purchase.status === "unavailable" ? "ไม่พบเบอร์นี้ในกลุ่มที่เลือกขณะตรวจสอบ อาจถูกจองหรือขายแล้ว"
-            : purchaseExpired ? "ผลตรวจสอบเกิน 1 นาที กรุณาตรวจสอบอีกครั้ง"
-            : "พบเบอร์ขณะตรวจสอบ เลือกและจองต่อบนเว็บไซต์ทรู เบอร์อาจเปลี่ยนสถานะได้"}</p>
-          {purchase.status === "available" && !purchaseExpired && (
-            <a className="buy" href={purchase.url} target="_blank" rel="noopener noreferrer"
-              onClick={event => {
-                if (Date.now() - purchase.checkedAt >= 60000) {
-                  event.preventDefault();
-                  handleBuy(purchase.row);
-                }
-              }}>ไปเลือกเบอร์ที่ทรู ↗</a>
+            : purchaseExpired ? "ตรวจสอบไว้เกิน 1 นาทีแล้ว เบอร์อาจเปลี่ยนสถานะ คุณตรวจสอบซ้ำหรือไปค้นหาที่ทรูได้"
+            : "พบเบอร์นี้ที่ทรู เลือกแพ็กเกจและจองต่อได้ที่เว็บไซต์ทรู"}</p>
+          {purchase.status === "available" && (
+            <TrueHandoff url={purchase.url} />
           )}
           {purchase.status !== "checking" && <button onClick={() => handleBuy(purchase.row)}>ตรวจสอบอีกครั้ง</button>}
           <button onClick={() => setPurchase(null)} disabled={purchase.status === "checking"}>ปิด</button>
+          {purchase.status === "available" && <p className="handoff-note">เปิดทรูในหน้านี้ หากยังไม่เห็นผล ให้กด “ค้นหาเบอร์” บนเว็บทรู</p>}
         </section>
       )}
 
@@ -486,10 +482,10 @@ function App() {
       {lastmod && (
         <section className="livebar card">
           <div className="live-title">
-            ภาพรวมข้อมูล ณ {fmtFileTime(lastmod)}
+            ข้อมูลชุดล่าสุด {fmtFileTime(lastmod)}
             {snapshotStale ? " — ข้อมูลเกิน 8 ชั่วโมง" : ""}
           </div>
-          <p>จัดทำตามรอบทุก 6 ชั่วโมง หน้าเว็บตรวจหารอบใหม่ทุก 5 นาที • ไม่รับประกันว่าเบอร์ทั้งหมดจะยังว่าง</p>
+          <p>ข้อมูลสุ่มรวบรวมทุก 6 ชั่วโมง ตรวจสอบสถานะอีกครั้งก่อนจอง</p>
         </section>
       )}
 
@@ -497,44 +493,55 @@ function App() {
         <div className="center">กำลังโหลดข้อมูล...</div>
       ) : (
         <>
-          <section className="filters card">
+          <section className="filters card" aria-label="ค้นหาเบอร์">
+            <h2>ค้นหาเบอร์</h2>
             <div className="searchbar">
               <div className="search-row">
+                <label className="field"><span>เลขท้าย</span>
                 <input
                   className="search-input"
                   aria-label="เลขท้าย"
-                  placeholder="จบด้วย... (เช่น 888)"
+                  placeholder="เช่น 888"
                   value={filters.ends || ""}
                   onChange={e => setFilters({ ...filters, ends: e.target.value })}
                 />
+                </label>
+                <label className="field"><span>ตัวเลขที่ต้องการ</span>
                 <input
                   className="search-input"
                   aria-label="ตัวเลขที่ต้องการ"
-                  placeholder="มีตัวเลข... (เช่น 8,9)"
+                  placeholder="เช่น 8, 9"
                   value={filters.include || ""}
                   onChange={e => setFilters({ ...filters, include: e.target.value })}
                 />
+                </label>
+                <label className="field"><span>ตัวเลขที่ไม่ต้องการ</span>
                 <input
                   className="search-input"
                   aria-label="ตัวเลขที่ไม่ต้องการ"
-                  placeholder="ไม่มีเลข... (เช่น 4)"
+                  placeholder="เช่น 4"
                   value={filters.exclude || ""}
                   onChange={e => setFilters({ ...filters, exclude: e.target.value })}
                 />
+                </label>
+                <label className="field"><span>รูปแบบเบอร์</span>
                 <input
                   className="search-input"
                   aria-label="รูปแบบเบอร์"
-                  placeholder="รูปแบบ... (0658XXXXXX)"
+                  placeholder="เช่น 0658XXXXXX"
                   value={filters.mask || ""}
                   onChange={e => setFilters({ ...filters, mask: e.target.value })}
                 />
+                </label>
+                <label className="field"><span>ลำดับตัวเลข</span>
                 <input
                   className="search-input"
                   aria-label="ลำดับตัวเลข"
-                  placeholder="มีลำดับ... (54321)"
+                  placeholder="เช่น 54321"
                   value={filters.seq || ""}
                   onChange={e => setFilters({ ...filters, seq: e.target.value })}
                 />
+                </label>
               </div>
               <div className="search-actions">
                 <select aria-label="ระดับเลขซ้ำ" className="filter-select" value={filters.minrun || ""} onChange={e => setFilters({ ...filters, minrun: e.target.value })}>
@@ -551,13 +558,13 @@ function App() {
                 </select>
                 <button className="btn" onClick={() => { setFilters({}); }}>ล้างค่า</button>
                 <button className={showFavs ? "btn active" : "btn"} onClick={() => setShowFavs(!showFavs)}>
-                  {showFavs ? "แสดงทั้งหมด" : "★ เบอร์โปรด"}
+                  {showFavs ? "แสดงทั้งหมด" : "เบอร์ที่บันทึก"}
                 </button>
               </div>
             </div>
 
             <div className="quick-row">
-              <span className="quick-label">โหมด:</span>
+              <span className="quick-label">ค้นหาด่วน</span>
               <button className={!filters.ends && !filters.minrun && !filters.seq && !filters.mask && !filters.include && !filters.exclude && !filters.abab && !filters.price && !showFavs && sort === "repeat" ? "chip on" : "chip"} onClick={() => setQuick({})}>ทั้งหมด</button>
               <button className="chip" onClick={() => setQuick({ ends: "888" })}>จบ 888</button>
               <button className="chip" onClick={() => setQuick({ ends: "000" })}>จบ 000</button>
@@ -570,28 +577,30 @@ function App() {
               <button className="chip" onClick={() => setQuick({ price: "under500" })}>ราคาต่ำ 500</button>
             </div>
 
-            <div className="quick-row">
-              <span className="quick-label">เรียง:</span>
-              <button className={sort === "repeat" ? "chip on" : "chip"} onClick={() => setSort("repeat")}>ซ้ำมากสุด</button>
-              <button className={sort === "memorable" ? "chip on" : "chip"} onClick={() => setSort("memorable")}>🧠 จำง่าย</button>
-              <button className={sort === "rarity" ? "chip on" : "chip"} onClick={() => setSort("rarity")}>💎 หายาก</button>
-              <button className={sort === "rare_mem" ? "chip on" : "chip"} onClick={() => setSort("rare_mem")}>💎+🧠 หายาก&จำง่าย</button>
-              <button className={sort === "value" ? "chip on" : "chip"} onClick={() => setSort("value")}>คุ้มสุด</button>
-              <button className={sort === "price" ? "chip on" : "chip"} onClick={() => setSort("price")}>ราคาต่ำสุด</button>
-              <button className="chip random" onClick={randomPickClick}>🎲 สุ่ม</button>
+            <div className="sort-row">
+              <label htmlFor="sort-order">เรียงตาม</label>
+              <select id="sort-order" value={sort} onChange={e => setSort(e.target.value)}>
+                <option value="repeat">เลขซ้ำมากที่สุด</option>
+                <option value="memorable">จำง่าย</option>
+                <option value="rarity">รูปแบบหายาก</option>
+                <option value="rare_mem">หายากและจำง่าย</option>
+                <option value="value">คะแนนต่อราคา</option>
+                <option value="price">ราคาต่ำสุด</option>
+              </select>
+              <button className="random" onClick={randomPickClick}>สุ่มหนึ่งเบอร์</button>
             </div>
           </section>
 
           {randomPick && (
             <section className="card random-card">
-              🎲 <span className="num big">{fmtNum(randomPick.msisdn)}</span> — {randomPick.price_baht_month}฿/เดือน
-              <button disabled={purchase?.status === "checking"} onClick={() => handleBuy(randomPick)}>ตรวจสอบ / ซื้อ</button>
+              <span className="quick-label">เบอร์สุ่ม</span> <span className="num big">{fmtNum(randomPick.msisdn)}</span> — {randomPick.price_baht_month}฿/เดือน
+              <button disabled={purchase?.status === "checking"} onClick={() => handleBuy(randomPick)}>เช็กเบอร์</button>
             </section>
           )}
 
           <section className="results">
             <div className="count">
-              {results.length.toLocaleString()} เบอร์
+              <strong>{results.length.toLocaleString()} <span>เบอร์</span></strong>
               {sampleFetchedAt && (
                 <span className="updated">ดึงตัวอย่างเบอร์ล่าสุด {fmtFileTime(sampleFetchedAt)} (ไม่ใช่ทั้งรายการ)</span>
               )}
@@ -601,26 +610,26 @@ function App() {
                 disabled={refreshing}
                 title="ดึงตัวอย่างเบอร์ล่าสุดเพิ่มเติมจากทรู"
               >
-                {refreshing ? "⏳ กำลังอัปเดต..." : "🔄 อัปเดตข้อมูล"}
+                {refreshing ? "กำลังอัปเดต…" : "ดึงเบอร์ล่าสุด"}
               </button>
             </div>
             <div className="table-scroll">
             <table>
               <thead>
-                <tr><th>เบอร์</th><th>ราคา/เดือน</th><th>แพทเทิร์น</th><th>จำง่าย</th><th></th><th></th></tr>
+                <tr><th>หมายเลข</th><th>แพ็กเกจ / เดือน</th><th>แพทเทิร์น</th><th title="คะแนนรูปแบบเพื่อช่วยเปรียบเทียบ ไม่ใช่คำทำนาย">คะแนนจำง่าย</th><th></th><th></th></tr>
               </thead>
               <tbody>
                 {shown.map(r => (
                   <tr key={r.msisdn}>
                     <td className="num">{fmtNum(r.msisdn)}</td>
-                    <td>{r.price_baht_month}฿</td>
+                    <td className="price">{r.price_baht_month.toLocaleString()} <span>บาท</span></td>
                     <td className="runs">{runsOf(r.msisdn) || "-"}</td>
-                    <td>{memorableScore(r.msisdn) > 0 ? "⭐".repeat(Math.min(3, Math.ceil(memorableScore(r.msisdn)/5))) : ""}</td>
+                    <td className="score">{memorableScore(r.msisdn)}</td>
                     <td>
                       <button className="buy" disabled={purchase?.status === "checking"}
                         aria-label={`ตรวจสอบเบอร์ ${fmtNum(r.msisdn)} ก่อนซื้อ`}
                         onClick={() => handleBuy(r)}>
-                        ตรวจสอบ / ซื้อ
+                        เช็กเบอร์
                       </button>
                     </td>
                     <td>
