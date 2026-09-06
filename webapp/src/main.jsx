@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import { validRow, validateSnapshot, mergeCatalog, parseFavorites, fetchJson, rawToRow } from "./catalog.js";
 
 // ── SEO (runtime metadata; static tags live in index.html) ────────────────
 const SEO_TITLE = "หาเบอร์มงคล – ค้นหาเบอร์สวยและเบอร์มงคล";
 const SEO_DESCRIPTION =
-  "ค้นหาเบอร์มงคลและเบอร์สวยจากทรูและดีแทค ดูดวงเบอร์โทรศัพท์ วิเคราะห์เลขมงคล เบอร์ตอง เบอร์ 4 ตัวท้าย ราคาถูก อัปเดตสดทุกวัน";
+  "ค้นหาเบอร์มงคลและเบอร์สวยจากทรูและดีแทค ดูดวงเบอร์โทรศัพท์ วิเคราะห์เลขมงคล เบอร์ตอง เบอร์ 4 ตัวท้าย ราคาถูก อัปเดตเป็นรอบ";
 
 function setMeta(name, content) {
   let el = document.head.querySelector(`meta[name="${name}"]`);
@@ -137,9 +138,9 @@ function matches(n, f) {
       if (!"Xx?*_".includes(ch) && m[i] !== ch) return false;
     }
   }
-  if (f.include && !f.include.split(",").filter(Boolean).every(d => m.includes(d))) return false;
+  if (f.include && !f.include.split(/[\s,]+/).filter(Boolean).every(d => m.includes(d))) return false;
   if (f.exclude) {
-    const ex = f.exclude.split(",").filter(Boolean);
+    const ex = f.exclude.split(/[\s,]+/).filter(Boolean);
     if (ex.some(d => m.includes(d))) return false;
   }
   if (f.minrun && maxrun(m) < f.minrun) return false;
@@ -153,7 +154,7 @@ function matches(n, f) {
 }
 
 // rarity of a structure: count how many numbers share it
-const STRUCT_RARITY = {}; // filled after data loads
+
 
 // ── POOL -> listing page (for the "buy" link) ──────────────────────────────
 const POOL_PAGES = {
@@ -185,95 +186,50 @@ function buyUrlSpecify(n) {
   return `${base}${sep}specify=${digits}`;
 }
 
-// ── cloud buy API (Vercel serverless function) ─────────────────────────────
-// Primary buy path: POST /api/buy on a Vercel function that reserves the
-// number directly with True's API (product-list exact lookup + select-number),
-// no browser needed — takes ~1s. Override the URL at build time with:
-//   VITE_BUY_API=https://<project>.vercel.app/api/buy
-const DEFAULT_BUY_API = "https://lucky-number-buy.vercel.app/api/buy";
-const BUY_API = (import.meta.env.VITE_BUY_API || DEFAULT_BUY_API).replace(/\/+$/, "");
-const BUY_API_EXPLICIT = Boolean((import.meta.env.VITE_BUY_API || "").trim());
-
-function cloudBuy(msisdn, pool) {
-  const ctrl = new AbortController();
-  // the API flow takes ~1s — generous 15s cap
-  const timer = setTimeout(() => ctrl.abort(), 15000);
-  return fetch(BUY_API, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ msisdn, pool }),
-    signal: ctrl.signal,
-  }).finally(() => clearTimeout(timer));
-}
-
-// ── local buy bridge (auto-buy in the background on this PC) ───────────────
-// Kept as a fallback: if VITE_BUY_API is unset AND the local bridge is up, the
-// buy button uses the bridge as before. The web app is a static site; the
-// actual buying is done by buy_bridge.py + buy_worker.py running on this machine.
-const BRIDGE_URL = "http://localhost:8765";
-
-function bridgeFetch(path, options = {}) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 2000);
-  return fetch(`${BRIDGE_URL}${path}`, { ...options, signal: ctrl.signal })
-    .finally(() => clearTimeout(timer));
-}
-
-// ── refresh from True through our same-origin serverless endpoint ──────────
-// The static numbers.json is the cold-start catalog. The browser asks our
-// Vercel function for fresh random samples, so no public CORS proxy is needed.
-async function proxyDraw(pool, size = 200) {
-  const r = await fetch(`${import.meta.env.BASE_URL}api/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pool, size }),
+// All browser requests are read-only. Selection happens in the visitor's
+// True session; reserving on a server first makes the search link go stale.
+async function refreshDraw(pool) {
+  const data = await fetchJson(`${import.meta.env.BASE_URL}api/refresh`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pool, size: 200 }),
   });
-  const data = await r.json().catch(() => null);
-  if (!r.ok || !data?.ok || !Array.isArray(data.numbering))
-    throw new Error(data?.error || `refresh HTTP ${r.status}`);
-  return data.numbering;
+  if (!data?.ok || !Array.isArray(data.numbering)) throw new Error("refresh failed");
+  return data.numbering.map(item => rawToRow(item, pool));
 }
 
 async function checkAvailability(msisdn, pool) {
-  const r = await fetch(`${import.meta.env.BASE_URL}api/check`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+  const data = await fetchJson(`${import.meta.env.BASE_URL}api/check`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ msisdn, pool }),
   });
-  const data = await r.json().catch(() => null);
-  if (!r.ok || !data?.ok) throw new Error(data?.error || `check HTTP ${r.status}`);
+  if (!data?.ok || typeof data.available !== "boolean" ||
+      data.msisdn !== msisdn || data.pool !== pool) throw new Error("check failed");
   return data;
 }
 
-// map a raw True API item to the app's row shape (mirror fetch_and_export.py)
-function rawToRow(it) {
-  const d0 = (it.detail || [])[0] || {};
-  let stars = 0;
-  for (const t of it.luckyType || []) stars += Number(t.star) || 0;
-  return {
-    msisdn: String(it.msisdn),
-    price_baht_month: Number(d0.rc) || 0,
-    pools: it.groupHora || "universal",
-    stars,
-  };
-}
-
-function recomputeRarity(list) {
+function computeRarity(list) {
   const rarity = {};
   for (const n of list) {
     const key = rawStruct(n.msisdn).join(",");
     rarity[key] = (rarity[key] || 0) + 1;
   }
-  for (const k of Object.keys(rarity)) STRUCT_RARITY[k] = rarity[k];
+  return rarity;
 }
 
 // ── components ──────────────────────────────────────────────────────────────
 function App() {
   const [numbers, setNumbers] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
-  const [dataFetchedAt, setDataFetchedAt] = useState(null);
-  const [favorites, setFavorites] = useState({});
-  const [filters, setFilters] = useState({});
+  const [sampleFetchedAt, setSampleFetchedAt] = useState(null);
+  const [loadError, setLoadError] = useState(false);
+  const [favorites, setFavorites] = useState(() => {
+    try { return parseFavorites(localStorage.getItem("lucky_favorites")); }
+    catch { return {}; }
+  });
+  const [filters, setFilters] = useState(() => {
+    const query = new URLSearchParams(window.location.search).get("s")?.trim();
+    return query && /^\d{1,10}$/.test(query) ? { seq: query } : {};
+  });
   const [sort, setSort] = useState("repeat");
   const [showFavs, setShowFavs] = useState(false);
   const [limit, setLimit] = useState(30);
@@ -281,67 +237,54 @@ function App() {
   const [randomPick, setRandomPick] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const refreshInFlight = useRef(false);
-  const proxyRefreshed = useRef(false);
+  const catalogRef = useRef({ rows: [], timestamp: 0, samples: new Map() });
+  const checkInFlight = useRef(false);
+  const purchaseRef = useRef(null);
+  const [purchase, setPurchase] = useState(null);
+  const [clockNow, setClockNow] = useState(Date.now());
+  const [reloadKey, setReloadKey] = useState(0);
   const [lastmod, setLastmod] = useState(null);
 
   // apply runtime SEO metadata once the app mounts
   useEffect(() => { applySeo(); }, []);
 
-  // Buy click: open a blank tab synchronously (so popup blockers do not
-  // interfere), check True's live catalog, then navigate only if available.
-  // The reservation still happens through the cloud buy function afterwards.
-  const handleBuy = useCallback((row, event) => {
-    event?.preventDefault();
-    const msisdn = row?.msisdn;
-    if (!msisdn) return;
-    const pool = poolOf(row);
-    const buyTab = window.open("about:blank", "_blank");
-    if (!buyTab) {
-      setNotice("⚠️ เบราว์เซอร์บล็อกแท็บใหม่ — อนุญาตป๊อปอัปแล้วลองอีกครั้ง");
-      return;
-    }
-    setNotice(`⏳ กำลังตรวจสอบเบอร์ ${fmtNum(msisdn)} กับทรู...`);
-    checkAvailability(msisdn, pool)
-      .then(({ available }) => {
-        if (!available) {
-          buyTab.close();
-          setNotice(`⚠️ เบอร์ ${fmtNum(msisdn)} ไม่ว่างแล้ว — ไม่เปิดหน้าค้นหาที่ไม่มีผลลัพธ์`);
-          return null;
-        }
-        buyTab.location.href = buyUrlSpecify(row);
-        setNotice(`⏳ กำลังจองเบอร์ ${fmtNum(msisdn)}... ใช้เวลาไม่กี่วินาที`);
-        return cloudBuy(msisdn, pool);
-      })
-      .then(async r => {
-        if (!r) return;
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok || !data.ok) {
-          const err = new Error(data.error || `cloud ${r.status}`);
-          err.unavailable = data.error === "unavailable";
-          throw err;
-        }
-        setNotice(`✅ จองเบอร์ ${fmtNum(msisdn)} สำเร็จ — เบอร์ถูกกรอกไว้ในแท็บที่เปิดมาแล้ว ค้นหาแล้วเลือกซิม/โปรโมชันต่อได้เลย`);
-      })
-      .catch(err => {
-        // If the read-only check is temporarily unavailable, preserve the old
-        // fallback and let the user try the listing page manually.
-        buyTab.location.href = buyUrlSpecify(row);
-        setNotice(err && err.unavailable
-          ? `⚠️ เบอร์ ${fmtNum(msisdn)} ถูกจอง/ขายไปแล้ว — เปิดหน้าเบอร์ไว้ให้ตรวจสอบ`
-          : "⚠️ ตรวจสอบ/จองอัตโนมัติไม่สำเร็จ — เปิดหน้าเบอร์ไว้ให้ลองค้นหาเอง");
+  const handleBuy = useCallback(async (row) => {
+    if (checkInFlight.current || !row?.msisdn) return;
+    checkInFlight.current = true;
+    setPurchase({ row, status: "checking" });
+    try {
+      const data = await checkAvailability(row.msisdn, poolOf(row));
+      setPurchase({
+        row, status: data.available ? "available" : "unavailable",
+        checkedAt: Date.now(), url: buyUrlSpecify(row),
       });
+    } catch {
+      setPurchase({ row, status: "error" });
+    } finally {
+      checkInFlight.current = false;
+    }
   }, []);
+
+  useEffect(() => {
+    if (purchase?.status === "checking") {
+      purchaseRef.current?.focus();
+      purchaseRef.current?.scrollIntoView({ block: "center", behavior: "instant" });
+    }
+  }, [purchase?.status, purchase?.row.msisdn]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(Date.now()), 10000);
+    return () => clearInterval(timer);
+  }, []);
+  const purchaseExpired = purchase?.checkedAt && clockNow - purchase.checkedAt >= 60000;
+  const snapshotStale = lastmod && clockNow - Date.parse(lastmod) > 8 * 60 * 60 * 1000;
 
   // buy-me-a-coffee: Thai modal with a PromptPay QR code
   const [coffeeOpen, setCoffeeOpen] = useState(false);
-
-  // load favorites from localStorage
+  const coffeeDialog = useRef(null);
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("lucky_favorites");
-      if (saved) setFavorites(JSON.parse(saved));
-    } catch (e) { /* ignore corrupt storage */ }
-  }, []);
+    if (coffeeOpen) coffeeDialog.current?.showModal();
+  }, [coffeeOpen]);
 
   // persist favorites to localStorage
   useEffect(() => {
@@ -349,89 +292,89 @@ function App() {
     catch (e) { /* storage full/blocked */ }
   }, [favorites]);
 
-  // load numbers dataset + compute structure rarity
-  // refetch on a timer so a newly deployed numbers.json is picked up
-  // without a full page reload (cache-busting query param)
+  // A snapshot and its metadata must agree before replacing the current list.
   useEffect(() => {
     let cancelled = false;
+    let loading = false;
     const load = async () => {
+      if (loading) return;
+      loading = true;
       try {
         const ts = Date.now();
-        const r = await fetch(`${import.meta.env.BASE_URL}data/numbers.json?v=${ts}`);
-        const data = await r.json();
+        const [data, meta] = await Promise.all([
+          fetchJson(`${import.meta.env.BASE_URL}data/numbers.json?v=${ts}`),
+          fetchJson(`${import.meta.env.BASE_URL}data/meta.json?v=${ts}`),
+        ]);
+        validateSnapshot(data, meta);
         if (cancelled) return;
-        if (proxyRefreshed.current) return; // keep the proxy-freshened catalog in memory
-        setNumbers(data);
-        setLoadingData(false);
-        setDataFetchedAt(new Date());
-        // fetch the file-level meta so the live bar shows the real data timestamp
-        fetch(`${import.meta.env.BASE_URL}data/meta.json?v=${ts}`)
-          .then(res => (res.ok ? res.json() : null))
-          .then(m => { if (m && m.lastmod && !cancelled) setLastmod(m.lastmod); })
-          .catch(() => { /* meta is optional; keep the previous lastmod */ });
-        recomputeRarity(data);
-      } catch (e) {
-        if (!cancelled) { setNotice("Failed to load dataset"); setLoadingData(false); }
+        const state = catalogRef.current;
+        const timestamp = Date.parse(meta.lastmod);
+        if (timestamp < state.timestamp) return;
+        state.rows = data;
+        state.timestamp = timestamp;
+        for (const [key, sample] of state.samples) {
+          if (sample.fetchedAt <= timestamp) state.samples.delete(key);
+        }
+        setNumbers(mergeCatalog(data, state.samples, timestamp));
+        setLastmod(meta.lastmod);
+        setLoadError(false);
+      } catch {
+        if (!cancelled) setLoadError(true);
+      } finally {
+        loading = false;
+        if (!cancelled) setLoadingData(false);
       }
     };
     load();
-    const timer = setInterval(load, 5 * 60 * 1000); // refetch every 5 min
+    const timer = setInterval(load, 5 * 60 * 1000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, []);
+  }, [reloadKey]);
 
-  // refresh: pull fresh samples from True through our serverless endpoint and
-  // upsert them into the in-memory catalog (snapshot stays as cold start)
   const refreshData = useCallback(async (silent) => {
     if (refreshInFlight.current) return;
     refreshInFlight.current = true;
     setRefreshing(true);
-    if (!silent) setNotice("⏳ กำลังอัปเดตข้อมูลจากทรูผ่านเซิร์ฟเวอร์...");
-    const plan = [];
-    for (const [pool, draws] of [["universal", 3], ["rahu", 2], ["khanthep", 2], ["naga", 1], ["ajchang", 1], ["emperor", 1]])
-      for (let i = 0; i < draws; i++) plan.push(pool);
-    const fresh = new Map();
-    let failed = 0;
-    for (let i = 0; i < plan.length; i += 3) {
-      const batch = plan.slice(i, i + 3);
-      const results = await Promise.allSettled(batch.map(p => proxyDraw(p)));
-      for (const res of results) {
-        if (res.status === "fulfilled") {
-          for (const r of res.value.map(rawToRow)) fresh.set(r.msisdn, r);
-        } else {
-          failed++;
+    if (!silent) setNotice("⏳ กำลังดึงตัวอย่างเบอร์ล่าสุดจากทรู...");
+    try {
+      const plan = ["universal", "universal", "universal", "rahu", "rahu",
+        "khanthep", "khanthep", "naga", "ajchang", "emperor"];
+      const fresh = new Map();
+      let failed = 0;
+      for (let i = 0; i < plan.length; i += 3) {
+        const results = await Promise.allSettled(plan.slice(i, i + 3).map(refreshDraw));
+        for (const result of results) {
+          if (result.status === "fulfilled" && result.value.every(validRow)) {
+            for (const row of result.value) fresh.set(row.msisdn, row);
+          } else failed++;
         }
       }
+      if (!fresh.size) throw new Error("no fresh numbers");
+      const state = catalogRef.current;
+      const fetchedAt = Date.now();
+      for (const row of fresh.values()) state.samples.set(row.msisdn, { row, fetchedAt });
+      setNumbers(mergeCatalog(state.rows, state.samples, state.timestamp));
+      setSampleFetchedAt(new Date(fetchedAt));
+      if (!silent) setNotice(`✅ ดึงตัวอย่างล่าสุด ${fresh.size.toLocaleString()} เบอร์${failed ? ` (บางส่วนไม่สำเร็จ ${failed}/${plan.length})` : ""} — ตรวจสอบเบอร์ก่อนซื้ออีกครั้ง`);
+    } catch {
+      if (!silent) setNotice("❌ ดึงข้อมูลไม่สำเร็จ ข้อมูลเดิมยังอยู่ กรุณาลองอีกครั้ง");
+    } finally {
+      refreshInFlight.current = false;
+      setRefreshing(false);
     }
-    refreshInFlight.current = false;
-    setRefreshing(false);
-    if (fresh.size === 0) {
-      setNotice("❌ อัปเดตล้มเหลว — ไม่สามารถดึงข้อมูลจากทรูผ่านเซิร์ฟเวอร์ได้ ลองอีกครั้ง");
-      return;
-    }
-    proxyRefreshed.current = true;
-    setNumbers(prev => {
-      const byId = new Map(fresh);
-      const next = prev.map(n => byId.get(n.msisdn) || n);
-      const seen = new Set(next.map(n => n.msisdn));
-      for (const r of fresh.values()) if (!seen.has(r.msisdn)) next.push(r);
-      recomputeRarity(next);
-      return next;
-    });
-    setDataFetchedAt(new Date());
-    if (!silent) setNotice(`✅ อัปเดตแล้ว! ได้เบอร์จากทรู ${fresh.size.toLocaleString()} เบอร์ (ล้มเหลว ${failed}/${plan.length})`);
   }, []);
 
-  // silent auto-refresh every 60 min (proxy refresh layered on the snapshot)
   useEffect(() => {
-    const t = setInterval(() => refreshData(true), 60 * 60 * 1000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => refreshData(true), 60 * 60 * 1000);
+    return () => clearInterval(timer);
   }, [refreshData]);
+
+  const structureRarity = useMemo(() => computeRarity(numbers), [numbers]);
 
   const toggleFav = useCallback((msisdn, row) => {
     setFavorites(prev => {
       const next = { ...prev };
       if (next[msisdn]) delete next[msisdn];
-      else next[msisdn] = { msisdn, price: row.price_baht_month, addedAt: Date.now() };
+      else next[msisdn] = { ...row, addedAt: Date.now() };
       return next;
     });
   }, []);
@@ -444,28 +387,28 @@ function App() {
   }, []);
 
   const randomPickClick = useCallback(() => {
-    const pool = numbers.filter(n => matches(n, filters));
+    const pool = numbers.filter(n => matches(n, filters) && (!showFavs || favorites[n.msisdn]));
     if (!pool.length) { setRandomPick(null); setNotice("ไม่มีเบอร์ที่ตรงเงื่อนไข"); return; }
     const pick = pool[Math.floor(Math.random() * pool.length)];
     setRandomPick(pick);
-  }, [numbers, filters]);
+  }, [numbers, filters, showFavs, favorites]);
+
+  useEffect(() => { setLimit(30); setRandomPick(null); }, [filters, showFavs, sort]);
 
   const results = useMemo(() => {
-    let rows = showFavs
-      ? numbers.filter(n => favorites[n.msisdn])
-      : numbers.filter(n => matches(n, filters));
+    let rows = numbers.filter(n => matches(n, filters) && (!showFavs || favorites[n.msisdn]));
     if (sort === "memorable") rows = [...rows].sort((a, b) => memorableScore(b.msisdn) - memorableScore(a.msisdn));
     else if (sort === "price") rows = [...rows].sort((a, b) => (parseInt(a.price_baht_month)||0) - (parseInt(b.price_baht_month)||0));
     else if (sort === "repeat") rows = [...rows].sort((a, b) => maxrun(b.msisdn) - maxrun(a.msisdn));
     else if (sort === "rarity") rows = [...rows].sort((a, b) => {
       const ka = rawStruct(a.msisdn).join(","), kb = rawStruct(b.msisdn).join(",");
-      const ra = ka ? STRUCT_RARITY[ka] || 1e9 : 1e9, rb = kb ? STRUCT_RARITY[kb] || 1e9 : 1e9;
+      const ra = ka ? structureRarity[ka] || 1e9 : 1e9, rb = kb ? structureRarity[kb] || 1e9 : 1e9;
       return ra - rb;
     });
     else if (sort === "rare_mem") rows = [...rows].filter(n => memorableScore(n.msisdn) > 0).sort((a, b) => {
       const ma = memorableScore(a.msisdn), mb = memorableScore(b.msisdn);
-      const ra = STRUCT_RARITY[rawStruct(a.msisdn).join(",")] || 1e9;
-      const rb = STRUCT_RARITY[rawStruct(b.msisdn).join(",")] || 1e9;
+      const ra = structureRarity[rawStruct(a.msisdn).join(",")] || 1e9;
+      const rb = structureRarity[rawStruct(b.msisdn).join(",")] || 1e9;
       return (mb / rb) - (ma / ra);
     });
     else if (sort === "value") rows = [...rows].sort((a, b) => {
@@ -474,31 +417,25 @@ function App() {
       return vb - va;
     });
     return rows;
-  }, [numbers, filters, sort, showFavs, favorites]);
+  }, [numbers, filters, sort, showFavs, favorites, structureRarity]);
 
   const shown = results.slice(0, limit);
 
-  const quickButtons = [
-    { label: "จบ 888", q: { ends: "888" } },
-    { label: "ตอง/คู่ (ซ้ำ 3+)", q: { minrun: "3" } },
-    { label: "สี่ตัว (8888)", q: { minrun: "4" } },
-    { label: "ลำดับ 54321/1234", q: {} }, // special: handled via sort? no - use seq quick
-    { label: "ราคา < 500", q: { price: "under500" } },
-    { label: "สุ่ม", q: null },
-  ];
 
   return (
     <div className="app">
       <header className="header">
         <div>
           <h1>หาเบอร์มงคล</h1>
-          <span className="sub">ค้นหาเบอร์มงคลฟรี ไม่ต้องผ่านนายหน้า อัพเดทตลอด • บันทึกเบอร์โปรดได้ในเบราว์เซอร์</span>
+          <span className="sub">ค้นหาเบอร์มงคล • ข้อมูลเป็นภาพรวมตามรอบ • ตรวจสอบก่อนซื้อ</span>
         </div>
         <button className="coffee" onClick={() => setCoffeeOpen(true)} title="เลี้ยงกาแฟ">☕ เลี้ยงกาแฟ</button>
       </header>
 
       {coffeeOpen && (
-        <div className="coffee-modal" onClick={() => setCoffeeOpen(false)}>
+        <dialog ref={coffeeDialog} className="coffee-modal" aria-label="เลี้ยงกาแฟ"
+          onClose={() => setCoffeeOpen(false)}
+          onClick={event => { if (event.target === event.currentTarget) setCoffeeOpen(false); }}>
           <div className="card" onClick={e => e.stopPropagation()}>
             <h3>☕ เลี้ยงกาแฟ</h3>
             <img
@@ -514,16 +451,45 @@ function App() {
             </p>
             <button onClick={() => setCoffeeOpen(false)}>ปิด</button>
           </div>
-        </div>
+        </dialog>
       )}
 
-      {notice && <div className="notice" onClick={() => setNotice(null)}>{notice}</div>}
+      {notice && <div className="notice" role="status">{notice} <button aria-label="ปิดข้อความ" onClick={() => setNotice(null)}>×</button></div>}
+
+      {purchase && (
+        <section ref={purchaseRef} tabIndex={-1} className="card purchase" role="status" aria-live="polite">
+          <strong>เบอร์ {fmtNum(purchase.row.msisdn)}</strong>
+          <p>{purchase.status === "checking" ? "กำลังตรวจสอบกับทรู..."
+            : purchase.status === "error" ? "ยังตรวจสอบไม่ได้ กรุณาลองอีกครั้ง"
+            : purchase.status === "unavailable" ? "ไม่พบเบอร์นี้ในกลุ่มที่เลือกขณะตรวจสอบ อาจถูกจองหรือขายแล้ว"
+            : purchaseExpired ? "ผลตรวจสอบเกิน 1 นาที กรุณาตรวจสอบอีกครั้ง"
+            : "พบเบอร์ขณะตรวจสอบ เลือกและจองต่อบนเว็บไซต์ทรู เบอร์อาจเปลี่ยนสถานะได้"}</p>
+          {purchase.status === "available" && !purchaseExpired && (
+            <a className="buy" href={purchase.url} target="_blank" rel="noopener noreferrer"
+              onClick={event => {
+                if (Date.now() - purchase.checkedAt >= 60000) {
+                  event.preventDefault();
+                  handleBuy(purchase.row);
+                }
+              }}>ไปเลือกเบอร์ที่ทรู ↗</a>
+          )}
+          {purchase.status !== "checking" && <button onClick={() => handleBuy(purchase.row)}>ตรวจสอบอีกครั้ง</button>}
+          <button onClick={() => setPurchase(null)} disabled={purchase.status === "checking"}>ปิด</button>
+        </section>
+      )}
+
+      {loadError && <section className="card" role="alert">
+        โหลดข้อมูลล่าสุดไม่ได้ {numbers.length > 0 ? "กำลังแสดงข้อมูลที่โหลดไว้ก่อนหน้า" : ""}
+        <button onClick={() => { setLoadingData(!numbers.length); setReloadKey(key => key + 1); }}>ลองโหลดใหม่</button>
+      </section>}
 
       {lastmod && (
         <section className="livebar card">
           <div className="live-title">
-            <span className="live-dot" /> สด อัปเดต {fmtFileTime(lastmod)}
+            ภาพรวมข้อมูล ณ {fmtFileTime(lastmod)}
+            {snapshotStale ? " — ข้อมูลเกิน 8 ชั่วโมง" : ""}
           </div>
+          <p>จัดทำตามรอบทุก 6 ชั่วโมง หน้าเว็บตรวจหารอบใหม่ทุก 5 นาที • ไม่รับประกันว่าเบอร์ทั้งหมดจะยังว่าง</p>
         </section>
       )}
 
@@ -536,43 +502,48 @@ function App() {
               <div className="search-row">
                 <input
                   className="search-input"
+                  aria-label="เลขท้าย"
                   placeholder="จบด้วย... (เช่น 888)"
                   value={filters.ends || ""}
                   onChange={e => setFilters({ ...filters, ends: e.target.value })}
                 />
                 <input
                   className="search-input"
+                  aria-label="ตัวเลขที่ต้องการ"
                   placeholder="มีตัวเลข... (เช่น 8,9)"
                   value={filters.include || ""}
                   onChange={e => setFilters({ ...filters, include: e.target.value })}
                 />
                 <input
                   className="search-input"
+                  aria-label="ตัวเลขที่ไม่ต้องการ"
                   placeholder="ไม่มีเลข... (เช่น 4)"
                   value={filters.exclude || ""}
                   onChange={e => setFilters({ ...filters, exclude: e.target.value })}
                 />
                 <input
                   className="search-input"
+                  aria-label="รูปแบบเบอร์"
                   placeholder="รูปแบบ... (0658XXXXXX)"
                   value={filters.mask || ""}
                   onChange={e => setFilters({ ...filters, mask: e.target.value })}
                 />
                 <input
                   className="search-input"
+                  aria-label="ลำดับตัวเลข"
                   placeholder="มีลำดับ... (54321)"
                   value={filters.seq || ""}
                   onChange={e => setFilters({ ...filters, seq: e.target.value })}
                 />
               </div>
               <div className="search-actions">
-                <select className="filter-select" value={filters.minrun || ""} onChange={e => setFilters({ ...filters, minrun: e.target.value })}>
+                <select aria-label="ระดับเลขซ้ำ" className="filter-select" value={filters.minrun || ""} onChange={e => setFilters({ ...filters, minrun: e.target.value })}>
                   <option value="">ซ้ำเลขทุกระดับ</option>
                   <option value="2">มีเลขคู่ (88)</option>
                   <option value="3">มีเลขตอง (888)</option>
                   <option value="4">มีเลขสี่ตัว (8888)</option>
                 </select>
-                <select className="filter-select" value={filters.price || ""} onChange={e => setFilters({ ...filters, price: e.target.value })}>
+                <select aria-label="ราคาแพ็กเกจ" className="filter-select" value={filters.price || ""} onChange={e => setFilters({ ...filters, price: e.target.value })}>
                   <option value="">ราคาทั้งหมด</option>
                   <option value="under500">ต่ำกว่า 500</option>
                   <option value="under1000">ต่ำกว่า 1,000</option>
@@ -614,28 +585,26 @@ function App() {
           {randomPick && (
             <section className="card random-card">
               🎲 <span className="num big">{fmtNum(randomPick.msisdn)}</span> — {randomPick.price_baht_month}฿/เดือน
-              <button onClick={() => handleBuy(randomPick)}>ซื้อ</button>
+              <button disabled={purchase?.status === "checking"} onClick={() => handleBuy(randomPick)}>ตรวจสอบ / ซื้อ</button>
             </section>
           )}
 
           <section className="results">
             <div className="count">
               {results.length.toLocaleString()} เบอร์
-              {dataFetchedAt && (
-                <span className="updated">
-                  อัปเดต {dataFetchedAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
-                  {proxyRefreshed.current ? " (สดจากทรู)" : "(รีเฟรชอัตโนมัติทุก 5 นาที)"}
-                </span>
+              {sampleFetchedAt && (
+                <span className="updated">ดึงตัวอย่างเบอร์ล่าสุด {fmtFileTime(sampleFetchedAt)} (ไม่ใช่ทั้งรายการ)</span>
               )}
               <button
                 className="refresh-btn"
                 onClick={() => refreshData(false)}
                 disabled={refreshing}
-                title="ดึงข้อมูลสดจาก True ผ่านเซิร์ฟเวอร์ของเว็บไซต์"
+                title="ดึงตัวอย่างเบอร์ล่าสุดเพิ่มเติมจากทรู"
               >
                 {refreshing ? "⏳ กำลังอัปเดต..." : "🔄 อัปเดตข้อมูล"}
               </button>
             </div>
+            <div className="table-scroll">
             <table>
               <thead>
                 <tr><th>เบอร์</th><th>ราคา/เดือน</th><th>แพทเทิร์น</th><th>จำง่าย</th><th></th><th></th></tr>
@@ -648,20 +617,17 @@ function App() {
                     <td className="runs">{runsOf(r.msisdn) || "-"}</td>
                     <td>{memorableScore(r.msisdn) > 0 ? "⭐".repeat(Math.min(3, Math.ceil(memorableScore(r.msisdn)/5))) : ""}</td>
                     <td>
-                      <a
-                        className="buy"
-                        href={buyUrlSpecify(r)}
-                        target="_blank"
-                        rel="noreferrer"
-                        title="ซื้อเบอร์นี้ (จองอัตโนมัติ + เปิดเบอร์ที่กรอกไว้)"
-                        onClick={(e) => handleBuy(r, e)}
-                      >
-                        ซื้อ
-                      </a>
+                      <button className="buy" disabled={purchase?.status === "checking"}
+                        aria-label={`ตรวจสอบเบอร์ ${fmtNum(r.msisdn)} ก่อนซื้อ`}
+                        onClick={() => handleBuy(r)}>
+                        ตรวจสอบ / ซื้อ
+                      </button>
                     </td>
                     <td>
                       <button
                         className={favorites[r.msisdn] ? "fav on" : "fav"}
+                        aria-pressed={Boolean(favorites[r.msisdn])}
+                        aria-label={`${favorites[r.msisdn] ? "ลบเบอร์โปรด" : "บันทึกเบอร์โปรด"} ${fmtNum(r.msisdn)}`}
                         onClick={() => toggleFav(r.msisdn, r)}
                         title={favorites[r.msisdn] ? "ลบออกจากเบอร์โปรด" : "บันทึกเบอร์โปรด"}
                       >
@@ -672,6 +638,8 @@ function App() {
                 ))}
               </tbody>
             </table>
+            </div>
+            {!results.length && <p role="status" className="empty">ไม่พบเบอร์ที่ตรงเงื่อนไข ลองล้างตัวกรองหรือโหลดข้อมูลใหม่</p>}
             {results.length > limit && (
               <button className="more" onClick={() => setLimit(limit + 50)}>แสดงเพิ่ม (อีก {results.length - limit} เบอร์)</button>
             )}
