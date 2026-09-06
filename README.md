@@ -30,11 +30,12 @@ That's it, everything is under one menu.
 
 [Open the web app](https://lucky-number-web-lac.vercel.app/).
 
-Click **ตรวจสอบ / ซื้อ** to perform a read-only, exact-number availability
-check. If True reports the number available, click **ไปเลือกเบอร์ที่ทรู**
-to open its search page. Select and complete checkout yourself in that browser
+Click **เช็กเบอร์** to perform a read-only, exact-number availability
+check. If True reports the number available, click **ไปที่ทรู**
+to open its search page in the same tab. Use the browser's Back action to return.
+Select and complete checkout yourself in that browser
 session. The web app does not reserve numbers or call the legacy buy service.
-A check expires after one minute; even a successful check cannot guarantee
+A check shows a stale warning after one minute, without blocking the link; even a successful check cannot guarantee
 availability by the time you reach True.
 
 The catalog is a random-sampled snapshot rebuilt on a six-hour schedule.
