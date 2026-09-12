@@ -31,6 +31,20 @@ export function rawToRow(item, pool) {
   return row;
 }
 
+export function aisRawToRow(item) {
+  const forecast = item?.forcast && typeof item.forcast === "object" ? item.forcast : {};
+  const scores = {};
+  for (const [name, source] of [["work", "work"], ["finance", "finance"],
+    ["love", "adoration"], ["health", "health"]]) {
+    if (typeof forecast[source] === "number" && Number.isFinite(forecast[source])) scores[name] = forecast[source];
+  }
+  const row = { msisdn: item?.mobile_no, price_baht_month: null, pools: "ais", provider: "ais",
+    stars: typeof forecast.aggregate === "number" ? forecast.aggregate : 0, scores,
+    grade: forecast.grade ?? null, lucky_type: item?.lucky_type ?? null };
+  if (!validRow(row)) throw new Error("invalid AIS number");
+  return row;
+}
+
 export function validateSnapshot(rows, meta) {
   const providerCounts = Array.isArray(rows) ? rows.reduce((counts, row) => {
     counts[providerOf(row)] += 1;
