@@ -54,6 +54,8 @@ The deployed app has no database. GitHub Actions builds `numbers.json` and
 `meta.json`, then Vercel serves those static snapshot files alongside read-only
 serverless availability endpoints. Favorites stay only in each visitor's browser.
 
+The front page can also show a small privacy-friendly traffic badge backed by Vercel Web Analytics. To enable it, turn on Web Analytics for the Vercel project and add the server-only `VERCEL_ANALYTICS_TOKEN` environment variable (plus `VERCEL_ANALYTICS_PROJECT_ID` and `VERCEL_ANALYTICS_TEAM_ID` only if the project defaults are not used). If the token is absent, the badge stays hidden and the rest of the site works normally.
+
 ## Deployment checks
 
 GitHub Actions runs Node API/catalog regression tests, Python exporter safety

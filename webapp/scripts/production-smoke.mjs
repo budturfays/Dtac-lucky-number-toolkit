@@ -65,7 +65,17 @@ assert.equal(aisResult.ok, true);
 assert.equal(aisResult.msisdn, aisRow.msisdn);
 assert.equal(aisResult.provider, "ais");
 assert.equal(typeof aisResult.available, "boolean");
+const traffic = await request("/api/visitor-count");
+assert.equal(traffic.status, 200);
+const trafficResult = await traffic.json();
+assert.equal(typeof trafficResult.ok, "boolean");
+if (trafficResult.ok) {
+  assert.equal(typeof trafficResult.todayVisitors, "number");
+  assert.equal(typeof trafficResult.todayPageviews, "number");
+  assert.equal(typeof trafficResult.totalPageviews, "number");
+}
 console.log(JSON.stringify({ catalogCount: rows.length, providerCounts: meta.providerCounts,
   trueChecked: msisdn, trueAvailable: result.available,
-  aisChecked: aisRow.msisdn, aisAvailable: aisResult.available }));
+  aisChecked: aisRow.msisdn, aisAvailable: aisResult.available,
+  trafficConfigured: trafficResult.ok }));
 

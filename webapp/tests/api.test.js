@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import check from "../api/check.js";
 import refresh from "../api/refresh.js";
 import refreshAis from "../api/refresh-ais.js";
+import visitorCount from "../api/visitor-count.js";
 import { parseNumbering } from "../lib/true-api.js";
 import { parseAisProducts } from "../lib/ais-api.js";
 
@@ -145,5 +146,59 @@ test("malformed AIS responses stay unknown", () => {
   for (const data of [{}, { total_count: 1, mobile: [] },
     { total_count: 1, mobile: [{ mobile_no: "bad" }] }]) {
     assert.throws(() => parseAisProducts(data));
+  }
+});
+test("visitor count stays hidden when the analytics token is not configured", async () => {
+  const savedAnalytics = process.env.VERCEL_ANALYTICS_TOKEN;
+  const savedVercel = process.env.VERCEL_TOKEN;
+  delete process.env.VERCEL_ANALYTICS_TOKEN;
+  delete process.env.VERCEL_TOKEN;
+  let calls = 0;
+  globalThis.fetch = () => { calls += 1; throw new Error("must not call analytics"); };
+  try {
+    const res = await invoke(visitorCount, null, "GET");
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.payload, { ok: false, configured: false });
+    assert.equal(calls, 0);
+  } finally {
+    if (savedAnalytics === undefined) delete process.env.VERCEL_ANALYTICS_TOKEN;
+    else process.env.VERCEL_ANALYTICS_TOKEN = savedAnalytics;
+    if (savedVercel === undefined) delete process.env.VERCEL_TOKEN;
+    else process.env.VERCEL_TOKEN = savedVercel;
+  }
+});
+test("visitor count aggregates today's visitors and lifetime pageviews", async () => {
+  const savedAnalytics = process.env.VERCEL_ANALYTICS_TOKEN;
+  const savedVercel = process.env.VERCEL_TOKEN;
+  process.env.VERCEL_ANALYTICS_TOKEN = "test-token";
+  delete process.env.VERCEL_TOKEN;
+  const urls = [];
+  globalThis.fetch = async (url, options) => {
+    urls.push({ url: String(url), options });
+    if (String(url).includes("/visits/aggregate")) {
+      return { ok: true, json: async () => ({ data: [{ visitors: 2, pageviews: 3 }] }) };
+    }
+    if (String(url).includes("/visits/count")) {
+      return { ok: true, json: async () => ({ data: { pageviews: 42 } }) };
+    }
+    throw new Error(`unexpected URL ${url}`);
+  };
+  try {
+    const res = await invoke(visitorCount, null, "GET");
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.payload.ok, true);
+    assert.equal(res.payload.todayVisitors, 2);
+    assert.equal(res.payload.todayPageviews, 3);
+    assert.equal(res.payload.totalPageviews, 42);
+    assert.match(res.headers["Cache-Control"], /^public, s-maxage=300/);
+    assert.equal(urls.length, 2);
+    for (const request of urls) {
+      assert.equal(request.options.headers.Authorization, "Bearer test-token");
+    }
+  } finally {
+    if (savedAnalytics === undefined) delete process.env.VERCEL_ANALYTICS_TOKEN;
+    else process.env.VERCEL_ANALYTICS_TOKEN = savedAnalytics;
+    if (savedVercel === undefined) delete process.env.VERCEL_TOKEN;
+    else process.env.VERCEL_TOKEN = savedVercel;
   }
 });
