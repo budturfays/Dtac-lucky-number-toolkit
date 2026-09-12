@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { validRow, validateSnapshot, mergeCatalog, parseFavorites, fetchJson, rawToRow, aisRawToRow, providerOf, rowKey } from "./catalog.js";
 import { TrueHandoff } from "./TrueHandoff.js";
+import { Analytics } from "@vercel/analytics/react";
 
 // ── SEO (runtime metadata; static tags live in index.html) ────────────────
 const SEO_TITLE = "หาเบอร์มงคลฟรี ซื้อตรงจากเครือข่าย | AIS ทรู ดีแทค";
@@ -334,9 +335,16 @@ function App() {
   const [clockNow, setClockNow] = useState(Date.now());
   const [reloadKey, setReloadKey] = useState(0);
   const [lastmod, setLastmod] = useState(null);
+  const [traffic, setTraffic] = useState(null);
 
   // apply runtime SEO metadata once the app mounts
   useEffect(() => { applySeo(); }, []);
+
+  useEffect(() => {
+    fetchJson(`${import.meta.env.BASE_URL}api/visitor-count`)
+      .then(data => { if (data?.ok) setTraffic(data); })
+      .catch(() => { /* Analytics is optional; keep the header clean when unavailable. */ });
+  }, []);
 
   const handleBuy = useCallback(async (row) => {
     if (checkInFlight.current || !row?.msisdn) return;
@@ -533,6 +541,11 @@ function App() {
             <span className="sub">ค้นหาได้ฟรี · ซื้อตรงจากเครือข่าย ไม่ผ่านนายหน้า</span>
           </div>
         </div>
+        {traffic && (
+          <div className="traffic-badge" aria-label="สถิติผู้เข้าชมเว็บไซต์">
+            วันนี้ {traffic.todayVisitors.toLocaleString()} คน · เปิดดู {traffic.todayPageviews.toLocaleString()} ครั้ง
+          </div>
+        )}
         <button className="coffee" onClick={() => setCoffeeOpen(true)} title="เลี้ยงกาแฟ">สนับสนุนเว็บไซต์</button>
       </header>
 
@@ -890,6 +903,6 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById("root")).render(<><App /><Analytics /></>);
 
 

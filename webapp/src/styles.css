@@ -73,6 +73,16 @@ button:disabled { opacity: .48; cursor: wait; transform: none; }
   line-height: 1;
 }
 .brand > div { display: grid; }
+.traffic-badge {
+  margin-left: auto;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(118,169,138,.06);
+  color: #9fb9aa;
+  font-size: 10px;
+  white-space: nowrap;
+}
 .eyebrow, .section-index {
   color: var(--copper);
   font-family: "IBM Plex Mono", monospace;
@@ -368,7 +378,8 @@ tbody tr:hover { background: rgba(201,154,91,.035); }
 @media (max-width: 620px) {
   body { background-size: auto, 100% 48px, auto; }
   .app { padding: 26px 13px 46px; }
-  .header { align-items: flex-start; padding: 0 3px 24px; }
+  .header { align-items: flex-start; flex-wrap: wrap; padding: 0 3px 24px; }
+  .traffic-badge { order: 3; margin-left: 0; }
   .brand { gap: 12px; }
   .brand-mark { width: 39px; height: 39px; font-size: 20px; }
   .eyebrow { font-size: 8px; }
