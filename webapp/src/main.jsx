@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
-import { validRow, validateSnapshot, mergeCatalog, parseFavorites, fetchJson, rawToRow, providerOf, rowKey } from "./catalog.js";
+import { validRow, validateSnapshot, mergeCatalog, parseFavorites, fetchJson, rawToRow, aisRawToRow, providerOf, rowKey } from "./catalog.js";
 import { TrueHandoff } from "./TrueHandoff.js";
 
 // ── SEO (runtime metadata; static tags live in index.html) ────────────────
@@ -253,6 +253,15 @@ async function refreshDraw(pool) {
   return data.numbering.map(item => rawToRow(item, pool));
 }
 
+async function refreshAis() {
+  const data = await fetchJson(`${import.meta.env.BASE_URL}api/refresh-ais`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+  });
+  if (!data?.ok || data.provider !== "ais" || !Array.isArray(data.mobile) ||
+      data.mobile.length !== data.total) throw new Error("AIS refresh failed");
+  return data.mobile.map(aisRawToRow);
+}
+
 async function checkAvailability(row) {
   const msisdn = row.msisdn;
   const provider = providerOf(row);
@@ -415,12 +424,14 @@ function App() {
     if (refreshInFlight.current) return;
     refreshInFlight.current = true;
     setRefreshing(true);
-    if (!silent) setNotice("กำลังดึงตัวอย่างล่าสุดจากทรู–ดีแทค…");
+    if (!silent) setNotice("กำลังอัปเดต AIS และทรู–ดีแทค…");
     try {
       const plan = ["universal", "universal", "universal", "rahu", "rahu",
         "khanthep", "khanthep", "naga", "ajchang", "emperor"];
       const fresh = new Map();
       let failed = 0;
+      let aisCount = 0;
+      const aisPromise = refreshAis().then(rows => ({ rows }), error => ({ error }));
       for (let i = 0; i < plan.length; i += 3) {
         const results = await Promise.allSettled(plan.slice(i, i + 3).map(refreshDraw));
         for (const result of results) {
@@ -429,13 +440,19 @@ function App() {
           } else failed++;
         }
       }
+      const aisResult = await aisPromise;
+      if (aisResult.rows) {
+        const aisRows = aisResult.rows;
+        for (const row of aisRows) fresh.set(row.msisdn, row);
+        aisCount = aisRows.length;
+      } else failed++;
       if (!fresh.size) throw new Error("no fresh numbers");
       const state = catalogRef.current;
       const fetchedAt = Date.now();
       for (const row of fresh.values()) state.samples.set(row.msisdn, { row, fetchedAt });
       setNumbers(mergeCatalog(state.rows, state.samples, state.timestamp));
       setSampleFetchedAt(new Date(fetchedAt));
-      if (!silent) setNotice(`ดึงตัวอย่างล่าสุด ${fresh.size.toLocaleString()} เบอร์${failed ? ` (บางส่วนไม่สำเร็จ ${failed}/${plan.length})` : ""} — ตรวจสอบเบอร์ก่อนซื้ออีกครั้ง`);
+      if (!silent) setNotice(`อัปเดตแล้ว AIS ${aisCount.toLocaleString()} เบอร์ + ตัวอย่างทรู–ดีแทค ${Math.max(0, fresh.size - aisCount).toLocaleString()} เบอร์${failed ? " (บางส่วนไม่สำเร็จ)" : ""} — ตรวจสอบเบอร์ก่อนซื้ออีกครั้ง`);
     } catch {
       if (!silent) setNotice("ดึงข้อมูลไม่สำเร็จ ข้อมูลเดิมยังอยู่ กรุณาลองอีกครั้ง");
     } finally {
@@ -445,7 +462,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const timer = setInterval(() => refreshData(true), 60 * 60 * 1000);
+    const timer = setInterval(() => refreshData(true), 6 * 60 * 60 * 1000);
     return () => clearInterval(timer);
   }, [refreshData]);
 
@@ -815,15 +832,15 @@ function App() {
             <div className="count">
               <strong>{results.length.toLocaleString()} <span>เบอร์</span></strong>
               {sampleFetchedAt && (
-                <span className="updated">ดึงตัวอย่างทรู–ดีแทคล่าสุด {fmtFileTime(sampleFetchedAt)} (ไม่ใช่ทั้งรายการ)</span>
+                <span className="updated">อัปเดต AIS + ตัวอย่างทรู–ดีแทคล่าสุด {fmtFileTime(sampleFetchedAt)}</span>
               )}
               <button
                 className="refresh-btn"
                 onClick={() => refreshData(false)}
                 disabled={refreshing}
-                title="ดึงตัวอย่างล่าสุดเพิ่มเติมจากทรู–ดีแทค"
+                title="อัปเดตข้อมูล AIS และทรู–ดีแทค"
               >
-                {refreshing ? "กำลังอัปเดต…" : "ดึงตัวอย่างทรูล่าสุด"}
+                {refreshing ? "กำลังอัปเดต…" : "อัปเดต AIS + ทรู"}
               </button>
             </div>
             <div className="table-scroll">

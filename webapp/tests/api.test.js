@@ -2,6 +2,7 @@ import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import check from "../api/check.js";
 import refresh from "../api/refresh.js";
+import refreshAis from "../api/refresh-ais.js";
 import { parseNumbering } from "../lib/true-api.js";
 import { parseAisProducts } from "../lib/ais-api.js";
 
@@ -27,12 +28,25 @@ function upstream(numbering, totalItem = numbering?.length ?? 0) {
 }
 test("health and unsupported methods never contact True", async () => {
   globalThis.fetch = () => { throw new Error("must not call upstream"); };
-  for (const handler of [check, refresh]) {
+  for (const handler of [check, refresh, refreshAis]) {
     assert.equal((await invoke(handler, null, "GET")).statusCode, 200);
     const res = await invoke(handler, null, "DELETE");
     assert.equal(res.statusCode, 405);
     assert.equal(res.headers.Allow, "GET, POST");
   }
+});
+test("AIS refresh returns the complete public catalog", async () => {
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "https://croissant.ais.th/external/app/lucky/products");
+    const sent = JSON.parse(options.body);
+    assert.equal(sent.variables.pageSize, 10000);
+    return { ok: true, json: async () => ({ total_count: 1, mobile: [{ mobile_no: msisdn }] }) };
+  };
+  const res = await invoke(refreshAis, null);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.provider, "ais");
+  assert.equal(res.payload.total, 1);
+  assert.deepEqual(res.payload.mobile, [{ mobile_no: msisdn }]);
 });
 test("invalid input is rejected before upstream", async () => {
   let calls = 0;

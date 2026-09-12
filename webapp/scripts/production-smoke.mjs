@@ -28,6 +28,15 @@ for (const route of ["/api/check", "/api/refresh"]) {
   assert.equal((await response.json()).ok, true);
   assert.equal((await request(route, { pool: "invalid" })).status, 400);
 }
+const aisRefreshHealth = await request("/api/refresh-ais");
+assert.equal(aisRefreshHealth.status, 200);
+assert.equal((await aisRefreshHealth.json()).ok, true);
+const aisRefresh = await request("/api/refresh-ais", {});
+assert.equal(aisRefresh.status, 200);
+const aisCatalog = await aisRefresh.json();
+assert.equal(aisCatalog.ok, true);
+assert.equal(aisCatalog.provider, "ais");
+assert.equal(aisCatalog.mobile.length, aisCatalog.total);
 const [dataRes, metaRes] = await Promise.all([request("/data/numbers.json"), request("/data/meta.json")]);
 assert.equal(dataRes.status, 200);
 assert.equal(metaRes.status, 200);
