@@ -4,6 +4,7 @@ import "./styles.css";
 import { validRow, validateSnapshot, mergeCatalog, parseFavorites, fetchJson, rawToRow, aisRawToRow, providerOf, rowKey } from "./catalog.js";
 import { TrueHandoff } from "./TrueHandoff.js";
 import { Analytics } from "@vercel/analytics/react";
+import { buildRarityIndex, rarityFor, rarityLabel } from "./rarity.js";
 
 // ── SEO (runtime metadata; static tags live in index.html) ────────────────
 const SEO_TITLE = "หาเบอร์มงคลฟรี ซื้อตรงจากเครือข่าย | AIS ทรู ดีแทค";
@@ -71,18 +72,6 @@ function maxrun(m) {
     best = Math.max(best, cur);
   }
   return best;
-}
-
-function rawStruct(m) {
-  const out = [];
-  let i = 0;
-  while (i < m.length) {
-    let j = i;
-    while (j < m.length && m[j] === m[i]) j++;
-    if (j - i >= 2) out.push(j - i);
-    i = j;
-  }
-  return out.sort((a, b) => b - a);
 }
 
 function memorableScore(m) {
@@ -164,7 +153,7 @@ function starSum(n) {
   return n.stars || 0;
 }
 
-function matches(n, f) {
+function matches(n, f, rarityIndex) {
   const m = n.msisdn;
   const exact = (f.exact || "").replace(/[s-]/g, "");
   const prefix = (f.prefix || "").replace(/[s-]/g, "");
@@ -205,10 +194,10 @@ function matches(n, f) {
   if (f.priceMin !== "" && f.priceMin !== undefined && (!Number.isFinite(price) || price < Number(f.priceMin))) return false;
   if (f.priceMax !== "" && f.priceMax !== undefined && (!Number.isFinite(price) || price > Number(f.priceMax))) return false;
   if (f.scoreMin !== "" && f.scoreMin !== undefined && scoreFor(n, f.scoreType || "total") < Number(f.scoreMin)) return false;
+  if (f.rarityMax !== "" && f.rarityMax !== undefined && rarityIndex &&
+      rarityFor(m, rarityIndex).count > Number(f.rarityMax)) return false;
   return true;
 }
-
-// rarity of a structure: count how many numbers share it
 
 
 // ── POOL -> listing page (for the "buy" link) ──────────────────────────────
@@ -274,15 +263,6 @@ async function checkAvailability(row) {
   if (!data?.ok || typeof data.available !== "boolean" ||
       data.msisdn !== msisdn || data.provider !== provider || data.pool !== pool) throw new Error("check failed");
   return data;
-}
-
-function computeRarity(list) {
-  const rarity = {};
-  for (const n of list) {
-    const key = rawStruct(n.msisdn).join(",");
-    rarity[key] = (rarity[key] || 0) + 1;
-  }
-  return rarity;
 }
 
 // ── components ──────────────────────────────────────────────────────────────
@@ -474,7 +454,7 @@ function App() {
     return () => clearInterval(timer);
   }, [refreshData]);
 
-  const structureRarity = useMemo(() => computeRarity(numbers), [numbers]);
+  const rarityIndex = useMemo(() => buildRarityIndex(numbers), [numbers]);
 
   const toggleFav = useCallback((msisdn, row) => {
     setFavorites(prev => {
@@ -493,31 +473,29 @@ function App() {
   }, []);
 
   const randomPickClick = useCallback(() => {
-    const pool = numbers.filter(n => matches(n, filters) && (!showFavs || favorites[n.msisdn]));
+    const pool = numbers.filter(n => matches(n, filters, rarityIndex) && (!showFavs || favorites[n.msisdn]));
     if (!pool.length) { setRandomPick(null); setNotice("ไม่มีเบอร์ที่ตรงเงื่อนไข"); return; }
     const pick = pool[Math.floor(Math.random() * pool.length)];
     setRandomPick(pick);
-  }, [numbers, filters, showFavs, favorites]);
+  }, [numbers, filters, showFavs, favorites, rarityIndex]);
 
   useEffect(() => { setLimit(30); setRandomPick(null); }, [filters, showFavs, sort]);
 
   const results = useMemo(() => {
-    let rows = numbers.filter(n => matches(n, filters) && (!showFavs || favorites[n.msisdn]));
+    let rows = numbers.filter(n => matches(n, filters, rarityIndex) && (!showFavs || favorites[n.msisdn]));
     if (sort === "memorable") rows = [...rows].sort((a, b) => memorableScore(b.msisdn) - memorableScore(a.msisdn));
     else if (sort === "price") rows = [...rows].sort((a, b) =>
       (Number.isFinite(a.price_baht_month) ? a.price_baht_month : Number.POSITIVE_INFINITY) -
       (Number.isFinite(b.price_baht_month) ? b.price_baht_month : Number.POSITIVE_INFINITY));
     else if (sort === "repeat") rows = [...rows].sort((a, b) => maxrun(b.msisdn) - maxrun(a.msisdn));
     else if (sort === "rarity") rows = [...rows].sort((a, b) => {
-      const ka = rawStruct(a.msisdn).join(","), kb = rawStruct(b.msisdn).join(",");
-      const ra = ka ? structureRarity[ka] || 1e9 : 1e9, rb = kb ? structureRarity[kb] || 1e9 : 1e9;
-      return ra - rb;
+      const ra = rarityFor(a.msisdn, rarityIndex), rb = rarityFor(b.msisdn, rarityIndex);
+      return ra.count - rb.count || rb.score - ra.score;
     });
     else if (sort === "rare_mem") rows = [...rows].filter(n => memorableScore(n.msisdn) > 0).sort((a, b) => {
       const ma = memorableScore(a.msisdn), mb = memorableScore(b.msisdn);
-      const ra = structureRarity[rawStruct(a.msisdn).join(",")] || 1e9;
-      const rb = structureRarity[rawStruct(b.msisdn).join(",")] || 1e9;
-      return (mb / rb) - (ma / ra);
+      const ra = rarityFor(a.msisdn, rarityIndex), rb = rarityFor(b.msisdn, rarityIndex);
+      return (mb / Math.max(rb.count, 1)) - (ma / Math.max(ra.count, 1));
     });
     else if (sort === "value") rows = [...rows].sort((a, b) => {
       const va = Number.isFinite(a.price_baht_month) ? starSum(a) / Math.max(a.price_baht_month, 1) : -1;
@@ -525,7 +503,7 @@ function App() {
       return vb - va;
     });
     return rows;
-  }, [numbers, filters, sort, showFavs, favorites, structureRarity]);
+  }, [numbers, filters, sort, showFavs, favorites, rarityIndex]);
 
   const shown = results.slice(0, limit);
 
@@ -799,7 +777,7 @@ function App() {
 
             <div className="quick-row">
               <span className="quick-label">ค้นหาด่วน</span>
-              <button className={!filters.ends && !filters.minrun && !filters.seq && !filters.mask && !filters.include && !filters.exclude && !filters.abab && !filters.price && !showFavs && sort === "repeat" ? "chip on" : "chip"} onClick={() => setQuick({})}>ทั้งหมด</button>
+              <button className={!filters.ends && !filters.minrun && !filters.seq && !filters.mask && !filters.include && !filters.exclude && !filters.abab && !filters.price && !filters.rarityMax && !showFavs && sort === "repeat" ? "chip on" : "chip"} onClick={() => setQuick({})}>ทั้งหมด</button>
               <button className="chip" onClick={() => setQuick({ ends: "888" })}>จบ 888</button>
               <button className="chip" onClick={() => setQuick({ ends: "000" })}>จบ 000</button>
               <button className="chip" onClick={() => setQuick({ ends: "0000" })}>จบ 0000</button>
@@ -808,6 +786,7 @@ function App() {
               <button className="chip" onClick={() => setQuick({ seq: "54321" })}>54321</button>
               <button className="chip" onClick={() => setQuick({ seq: "1234" })}>1234</button>
               <button className="chip" onClick={() => setQuick({ abab: true })}>1212 (ABAB)</button>
+              <button className="chip" onClick={() => { setFilters({ ...filters, rarityMax: "3" }); setShowFavs(false); setSort("rarity"); setLimit(30); }}>หายากมาก (≤3)</button>
               <button className="chip" onClick={() => setQuick({ price: "under500" })}>ราคาต่ำ 500</button>
               <button className="chip" onClick={() => setQuick({ provider: "ais" })}>เฉพาะ AIS</button>
               <button className="chip" onClick={() => setQuick({ provider: "true" })}>เฉพาะทรู–ดีแทค</button>
@@ -867,7 +846,11 @@ function App() {
                     <td className="num">{fmtNum(r.msisdn)}</td>
                     <td><span className={`provider-badge ${providerOf(r)}`}>{providerOf(r) === "ais" ? "AIS" : "ทรู–ดีแทค"}</span></td>
                     <td className="price">{Number.isFinite(r.price_baht_month) ? <>{r.price_baht_month.toLocaleString()} <span>บาท</span></> : <span>ตรวจสอบที่ AIS</span>}</td>
-                    <td className="runs">{runsOf(r.msisdn) || "-"}</td>
+                    <td className="runs" title={`ความถี่รูปแบบในแคตตาล็อก: ${rarityLabel(rarityFor(r.msisdn, rarityIndex))}`}>
+                      {runsOf(r.msisdn) || "-"}
+                      {rarityLabel(rarityFor(r.msisdn, rarityIndex)) !== "ทั่วไป" &&
+                        <small className="rarity-note">{rarityLabel(rarityFor(r.msisdn, rarityIndex))}</small>}
+                    </td>
                     <td className="score">{memorableScore(r.msisdn)}</td>
                     <td>
                       <button className="buy" disabled={purchase?.status === "checking"}
