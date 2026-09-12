@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
-import { validRow, validateSnapshot, mergeCatalog, parseFavorites, fetchJson, rawToRow } from "./catalog.js";
+import { validRow, validateSnapshot, mergeCatalog, parseFavorites, fetchJson, rawToRow, providerOf, rowKey } from "./catalog.js";
 import { TrueHandoff } from "./TrueHandoff.js";
 
 // ── SEO (runtime metadata; static tags live in index.html) ────────────────
 const SEO_TITLE = "หาเบอร์มงคล – ค้นหาเบอร์สวยและเบอร์มงคล";
 const SEO_DESCRIPTION =
-  "ค้นหาเบอร์มงคลและเบอร์สวยจากทรูและดีแทค ดูดวงเบอร์โทรศัพท์ วิเคราะห์เลขมงคล เบอร์ตอง เบอร์ 4 ตัวท้าย ราคาถูก อัปเดตเป็นรอบ";
+  "ค้นหาเบอร์มงคลและเบอร์สวยจาก AIS ทรู และดีแทค วิเคราะห์เลขมงคล เบอร์ตอง เบอร์ 4 ตัวท้าย อัปเดตเป็นรอบ";
 
 function setMeta(name, content) {
   let el = document.head.querySelector(`meta[name="${name}"]`);
@@ -189,16 +189,18 @@ function matches(n, f) {
     if (excluded.some(pattern => patternMatches(m, pattern))) return false;
   }
   if (f.pattern && !patternMatches(m, f.pattern)) return false;
+  if (f.provider && providerOf(n) !== f.provider) return false;
   if (f.pool && !(n.pools || "").split(",").map(pool => pool.trim()).includes(f.pool)) return false;
   if (f.freshness === "sampled" && !n.sampledAt) return false;
   if (f.minrun && maxrun(m) < f.minrun) return false;
   if (f.price) {
-    const pr = parseInt(n.price_baht_month, 10);
+    const pr = n.price_baht_month;
+    if (!Number.isFinite(pr)) return false;
     if (f.price === "under500" && pr >= 500) return false;
     if (f.price === "under1000" && pr >= 1000) return false;
     if (f.price === "under1500" && pr >= 1500) return false;
   }
-  const price = Number(n.price_baht_month);
+  const price = n.price_baht_month;
   if (f.priceMin !== "" && f.priceMin !== undefined && (!Number.isFinite(price) || price < Number(f.priceMin))) return false;
   if (f.priceMax !== "" && f.priceMax !== undefined && (!Number.isFinite(price) || price > Number(f.priceMax))) return false;
   if (f.scoreMin !== "" && f.scoreMin !== undefined && scoreFor(n, f.scoreType || "total") < Number(f.scoreMin)) return false;
@@ -217,6 +219,7 @@ const POOL_PAGES = {
   ajchang: "https://store.true.th/lucky-number/postpaid/morchang-personalize?type=all&priceplan=all",
   emperor: "https://store.true.th/lucky-number/postpaid/morchang-emperor?type=all&priceplan=all",
 };
+const AIS_FIND_URL = "https://www.ais.th/consumers/package/exclusive-plan/lucky-number/find-number";
 
 function poolOf(n) {
   const pools = (n.pools || n.pool || "universal").split(",");
@@ -232,6 +235,7 @@ function buyUrl(n) {
 // Listing URL with the number's digits pre-filled into the search boxes via
 // ?specify=<9 digits> (True's site reads this and fills the position boxes).
 function buyUrlSpecify(n) {
+  if (providerOf(n) === "ais") return `${AIS_FIND_URL}?mobile_no_like=${n.msisdn}`;
   const base = buyUrl(n);
   const sep = base.includes("?") ? "&" : "?";
   const digits = n.msisdn.slice(1); // drop leading 0 (box 0 is fixed)
@@ -249,13 +253,16 @@ async function refreshDraw(pool) {
   return data.numbering.map(item => rawToRow(item, pool));
 }
 
-async function checkAvailability(msisdn, pool) {
+async function checkAvailability(row) {
+  const msisdn = row.msisdn;
+  const provider = providerOf(row);
+  const pool = provider === "true" ? poolOf(row) : null;
   const data = await fetchJson(`${import.meta.env.BASE_URL}api/check`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ msisdn, pool }),
+    body: JSON.stringify({ msisdn, pool, provider }),
   });
   if (!data?.ok || typeof data.available !== "boolean" ||
-      data.msisdn !== msisdn || data.pool !== pool) throw new Error("check failed");
+      data.msisdn !== msisdn || data.provider !== provider || data.pool !== pool) throw new Error("check failed");
   return data;
 }
 
@@ -327,7 +334,7 @@ function App() {
     checkInFlight.current = true;
     setPurchase({ row, status: "checking" });
     try {
-      const data = await checkAvailability(row.msisdn, poolOf(row));
+      const data = await checkAvailability(row);
       setPurchase({
         row, status: data.available ? "available" : "unavailable",
         checkedAt: Date.now(), url: buyUrlSpecify(row),
@@ -408,7 +415,7 @@ function App() {
     if (refreshInFlight.current) return;
     refreshInFlight.current = true;
     setRefreshing(true);
-    if (!silent) setNotice("กำลังดึงเบอร์ล่าสุดจากทรู…");
+    if (!silent) setNotice("กำลังดึงตัวอย่างล่าสุดจากทรู–ดีแทค…");
     try {
       const plan = ["universal", "universal", "universal", "rahu", "rahu",
         "khanthep", "khanthep", "naga", "ajchang", "emperor"];
@@ -472,7 +479,9 @@ function App() {
   const results = useMemo(() => {
     let rows = numbers.filter(n => matches(n, filters) && (!showFavs || favorites[n.msisdn]));
     if (sort === "memorable") rows = [...rows].sort((a, b) => memorableScore(b.msisdn) - memorableScore(a.msisdn));
-    else if (sort === "price") rows = [...rows].sort((a, b) => (parseInt(a.price_baht_month)||0) - (parseInt(b.price_baht_month)||0));
+    else if (sort === "price") rows = [...rows].sort((a, b) =>
+      (Number.isFinite(a.price_baht_month) ? a.price_baht_month : Number.POSITIVE_INFINITY) -
+      (Number.isFinite(b.price_baht_month) ? b.price_baht_month : Number.POSITIVE_INFINITY));
     else if (sort === "repeat") rows = [...rows].sort((a, b) => maxrun(b.msisdn) - maxrun(a.msisdn));
     else if (sort === "rarity") rows = [...rows].sort((a, b) => {
       const ka = rawStruct(a.msisdn).join(","), kb = rawStruct(b.msisdn).join(",");
@@ -486,8 +495,8 @@ function App() {
       return (mb / rb) - (ma / ra);
     });
     else if (sort === "value") rows = [...rows].sort((a, b) => {
-      const va = starSum(a) / Math.max(parseInt(a.price_baht_month)||1, 1);
-      const vb = starSum(b) / Math.max(parseInt(b.price_baht_month)||1, 1);
+      const va = Number.isFinite(a.price_baht_month) ? starSum(a) / Math.max(a.price_baht_month, 1) : -1;
+      const vb = Number.isFinite(b.price_baht_month) ? starSum(b) / Math.max(b.price_baht_month, 1) : -1;
       return vb - va;
     });
     return rows;
@@ -502,7 +511,7 @@ function App() {
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">๙</span>
           <div>
-            <span className="eyebrow">คลังเบอร์ทรู–ดีแทค</span>
+            <span className="eyebrow">คลังเบอร์ AIS · ทรู · ดีแทค</span>
             <h1>หาเบอร์มงคล</h1>
             <span className="sub">คัดเบอร์จากรูปแบบ เลขท้าย และงบรายเดือน</span>
           </div>
@@ -537,17 +546,17 @@ function App() {
       {purchase && (
         <section ref={purchaseRef} tabIndex={-1} className="card purchase" role="status" aria-live="polite">
           <strong>เบอร์ {fmtNum(purchase.row.msisdn)}</strong>
-          <p>{purchase.status === "checking" ? "กำลังตรวจสอบกับทรู..."
+          <p>{purchase.status === "checking" ? `กำลังตรวจสอบกับ${providerOf(purchase.row) === "ais" ? " AIS" : "ทรู"}...`
             : purchase.status === "error" ? "ยังตรวจสอบไม่ได้ กรุณาลองอีกครั้ง"
             : purchase.status === "unavailable" ? "ไม่พบเบอร์นี้ในกลุ่มที่เลือกขณะตรวจสอบ อาจถูกจองหรือขายแล้ว"
-            : purchaseExpired ? "ตรวจสอบไว้เกิน 1 นาทีแล้ว เบอร์อาจเปลี่ยนสถานะ คุณตรวจสอบซ้ำหรือไปค้นหาที่ทรูได้"
-            : "พบเบอร์นี้ที่ทรู เลือกแพ็กเกจและจองต่อได้ที่เว็บไซต์ทรู"}</p>
+            : purchaseExpired ? "ตรวจสอบไว้เกิน 1 นาทีแล้ว เบอร์อาจเปลี่ยนสถานะ กรุณาตรวจสอบซ้ำหรือไปค้นหาที่ผู้ให้บริการ"
+            : `พบเบอร์นี้ที่${providerOf(purchase.row) === "ais" ? " AIS" : "ทรู"} เลือกแพ็กเกจและจองต่อได้ที่เว็บไซต์ผู้ให้บริการ`}</p>
           {purchase.status === "available" && (
-            <TrueHandoff url={purchase.url} />
+            <TrueHandoff url={purchase.url} label={providerOf(purchase.row) === "ais" ? "ไปที่ AIS" : "ไปที่ทรู"} />
           )}
           {purchase.status !== "checking" && <button onClick={() => handleBuy(purchase.row)}>ตรวจสอบอีกครั้ง</button>}
           <button onClick={() => setPurchase(null)} disabled={purchase.status === "checking"}>ปิด</button>
-          {purchase.status === "available" && <p className="handoff-note">เปิดทรูในหน้านี้ หากยังไม่เห็นผล ให้กด “ค้นหาเบอร์” บนเว็บทรู</p>}
+          {purchase.status === "available" && <p className="handoff-note">ลิงก์จะเปิดหน้าค้นหาของผู้ให้บริการพร้อมหมายเลขนี้</p>}
         </section>
       )}
 
@@ -564,7 +573,7 @@ function App() {
               อัปเดตล่าสุด <time dateTime={lastmod}>{fmtFileTime(lastmod)}</time>
             {snapshotStale ? " — ข้อมูลเกิน 8 ชั่วโมง" : ""}
             </div>
-            <p>รวบรวมใหม่ทุก 6 ชั่วโมง · เช็กสถานะกับทรูก่อนจองทุกครั้ง</p>
+            <p>รวบรวมใหม่ทุก 6 ชั่วโมง · เช็กสถานะกับ AIS หรือทรูก่อนจองทุกครั้ง</p>
           </div>
         </section>
       )}
@@ -666,6 +675,16 @@ function App() {
               </summary>
               <div className="advanced-grid">
                 <label className="field">
+                  <span>เครือข่าย</span>
+                  <ChoiceButtons ariaLabel="เครือข่าย" value={filters.provider || ""}
+                    onChange={value => setFilters({ ...filters, provider: value, pool: value === "ais" ? "" : filters.pool })}
+                    options={[
+                      { value: "", label: "ทุกเครือข่าย" },
+                      { value: "true", label: "ทรู–ดีแทค" },
+                      { value: "ais", label: "AIS" },
+                    ]} />
+                </label>
+                <label className="field">
                   <span>ค้นหาเบอร์เต็ม</span>
                   <input className="search-input" inputMode="numeric" maxLength={10}
                     aria-label="ค้นหาเบอร์เต็ม" placeholder="เช่น 0803655552"
@@ -678,9 +697,9 @@ function App() {
                     value={filters.prefix || ""} onChange={e => setFilters({ ...filters, prefix: e.target.value })} />
                 </label>
                 <label className="field">
-                  <span>เครือข่าย / หมวด</span>
-                  <ChoiceButtons ariaLabel="เครือข่ายหรือหมวด" value={filters.pool || ""}
-                    onChange={value => setFilters({ ...filters, pool: value })}
+                  <span>หมวดเบอร์ทรู–ดีแทค</span>
+                  <ChoiceButtons ariaLabel="หมวดเบอร์ทรูและดีแทค" value={filters.pool || ""}
+                    onChange={value => setFilters({ ...filters, pool: value, provider: value ? "true" : filters.provider })}
                     options={[
                       { value: "", label: "ทุกหมวด" },
                       { value: "universal", label: "ทรูรวม" },
@@ -727,7 +746,7 @@ function App() {
                         { value: "finance", label: "การเงิน" },
                         { value: "love", label: "ความรัก" },
                       ]} />
-                    <input className="search-input" type="number" min="0" max="20" step="1" aria-label="คะแนนขั้นต่ำ"
+                    <input className="search-input" type="number" min="0" max="100" step="1" aria-label="คะแนนขั้นต่ำ"
                       placeholder="คะแนนขั้นต่ำ" value={filters.scoreMin ?? ""} onChange={e => setFilters({ ...filters, scoreMin: e.target.value })} />
                   </div>
                 </label>
@@ -760,6 +779,8 @@ function App() {
               <button className="chip" onClick={() => setQuick({ seq: "1234" })}>1234</button>
               <button className="chip" onClick={() => setQuick({ abab: true })}>1212 (ABAB)</button>
               <button className="chip" onClick={() => setQuick({ price: "under500" })}>ราคาต่ำ 500</button>
+              <button className="chip" onClick={() => setQuick({ provider: "ais" })}>เฉพาะ AIS</button>
+              <button className="chip" onClick={() => setQuick({ provider: "true" })}>เฉพาะทรู–ดีแทค</button>
             </div>
 
             <div className="sort-row">
@@ -779,7 +800,7 @@ function App() {
 
           {randomPick && (
             <section className="card random-card">
-              <span className="quick-label">เบอร์สุ่ม</span> <span className="num big">{fmtNum(randomPick.msisdn)}</span> — {randomPick.price_baht_month}฿/เดือน
+              <span className="quick-label">เบอร์สุ่ม</span> <span className="num big">{fmtNum(randomPick.msisdn)}</span> — {providerOf(randomPick) === "ais" ? "AIS · ตรวจสอบแพ็กเกจ" : `${randomPick.price_baht_month}฿/เดือน`}
               <button disabled={purchase?.status === "checking"} onClick={() => handleBuy(randomPick)}>เช็กเบอร์</button>
             </section>
           )}
@@ -794,27 +815,28 @@ function App() {
             <div className="count">
               <strong>{results.length.toLocaleString()} <span>เบอร์</span></strong>
               {sampleFetchedAt && (
-                <span className="updated">ดึงตัวอย่างเบอร์ล่าสุด {fmtFileTime(sampleFetchedAt)} (ไม่ใช่ทั้งรายการ)</span>
+                <span className="updated">ดึงตัวอย่างทรู–ดีแทคล่าสุด {fmtFileTime(sampleFetchedAt)} (ไม่ใช่ทั้งรายการ)</span>
               )}
               <button
                 className="refresh-btn"
                 onClick={() => refreshData(false)}
                 disabled={refreshing}
-                title="ดึงตัวอย่างเบอร์ล่าสุดเพิ่มเติมจากทรู"
+                title="ดึงตัวอย่างล่าสุดเพิ่มเติมจากทรู–ดีแทค"
               >
-                {refreshing ? "กำลังอัปเดต…" : "ดึงเบอร์ล่าสุด"}
+                {refreshing ? "กำลังอัปเดต…" : "ดึงตัวอย่างทรูล่าสุด"}
               </button>
             </div>
             <div className="table-scroll">
             <table>
               <thead>
-                <tr><th>หมายเลข</th><th>แพ็กเกจ / เดือน</th><th>แพทเทิร์น</th><th title="คะแนนรูปแบบเพื่อช่วยเปรียบเทียบ ไม่ใช่คำทำนาย">คะแนนจำง่าย</th><th></th><th></th></tr>
+                <tr><th>หมายเลข</th><th>เครือข่าย</th><th>แพ็กเกจ / เดือน</th><th>แพทเทิร์น</th><th title="คะแนนรูปแบบเพื่อช่วยเปรียบเทียบ ไม่ใช่คำทำนาย">คะแนนจำง่าย</th><th></th><th></th></tr>
               </thead>
               <tbody>
                 {shown.map(r => (
-                  <tr key={r.msisdn}>
+                  <tr key={rowKey(r)}>
                     <td className="num">{fmtNum(r.msisdn)}</td>
-                    <td className="price">{r.price_baht_month.toLocaleString()} <span>บาท</span></td>
+                    <td><span className={`provider-badge ${providerOf(r)}`}>{providerOf(r) === "ais" ? "AIS" : "ทรู–ดีแทค"}</span></td>
+                    <td className="price">{Number.isFinite(r.price_baht_month) ? <>{r.price_baht_month.toLocaleString()} <span>บาท</span></> : <span>ตรวจสอบที่ AIS</span>}</td>
                     <td className="runs">{runsOf(r.msisdn) || "-"}</td>
                     <td className="score">{memorableScore(r.msisdn)}</td>
                     <td>

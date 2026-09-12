@@ -35,7 +35,7 @@ jobs:
           cache: npm
           cache-dependency-path: webapp/package-lock.json
 
-      # 1) Fetch fresh numbers from True's API and build the catalog JSON
+      # 1) Fetch True-dtac samples plus the complete AIS public listing
       - name: Fetch fresh data
         run: |
           python -m pip install --quiet -r requirements.txt

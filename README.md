@@ -26,19 +26,20 @@ python lucky.py
 
 That's it, everything is under one menu.
 
-## Web app: check availability, then continue to True
+## Web app: AIS, True and dtac
 
 [Open the web app](https://lucky-number-web-lac.vercel.app/).
 
 Click **เช็กเบอร์** to perform a read-only, exact-number availability
-check. If True reports the number available, click **ไปที่ทรู**
-to open its search page in the same tab. Use the browser's Back action to return.
+check. If the provider reports the number available, continue to the matching
+AIS or True search page in the same tab. Use the browser's Back action to return.
 Select and complete checkout yourself in that browser
 session. The web app does not reserve numbers or call the legacy buy service.
 A check shows a stale warning after one minute, without blocking the link; even a successful check cannot guarantee
 availability by the time you reach True.
 
-The catalog is a random-sampled snapshot rebuilt on a six-hour schedule.
+The catalog combines AIS's complete public lucky-number listing with a
+random-sampled True-dtac snapshot and is rebuilt on a six-hour schedule.
 Open pages check for a newer snapshot every five minutes. Manual refresh adds
 a small fresh sample, not a full inventory replacement. The displayed snapshot
 timestamp and sample timestamp are intentionally separate. Failed or malformed
@@ -48,6 +49,10 @@ Snapshots older than eight hours show a warning.
 No local bridge or PC is required for the deployed web app. The legacy
 `buy_bridge.py` and `buy_worker.py` are separate, opt-in tools; they are no longer
 called by the web UI and can reserve numbers if run manually.
+
+The deployed app has no database. GitHub Actions builds `numbers.json` and
+`meta.json`, then Vercel serves those static snapshot files alongside read-only
+serverless availability endpoints. Favorites stay only in each visitor's browser.
 
 ## Deployment checks
 

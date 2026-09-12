@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateSnapshot, mergeCatalog, parseFavorites, validRow, rawToRow } from "../src/catalog.js";
-const row = { msisdn: "0803655552", price_baht_month: 399, stars: 12, pools: "universal" };
-const meta = { count: 1, lastmod: "2026-09-06T00:00:00Z" };
+import { validateSnapshot, mergeCatalog, parseFavorites, validRow, rawToRow, rowKey } from "../src/catalog.js";
+const row = { msisdn: "0803655552", price_baht_month: 399, stars: 12, pools: "universal", provider: "true" };
+const meta = { count: 1, lastmod: "2026-09-06T00:00:00Z", providerCounts: { true: 1, ais: 0 } };
 test("missing price never becomes a free number", () => {
   assert.throws(() => rawToRow({ msisdn: row.msisdn }, "universal"));
   assert.throws(() => rawToRow({ msisdn: row.msisdn, detail: [{ rc: null }] }, "universal"));
@@ -20,6 +20,14 @@ test("raw True categories are retained for score filters", () => {
   }, "universal");
   assert.deepEqual(converted.scores, { work: 5, finance: 4, love: 3 });
   assert.equal(converted.stars, 12);
+  assert.equal(converted.provider, "true");
+});
+test("AIS rows use unknown monthly pricing and a provider-specific identity", () => {
+  const ais = { ...row, provider: "ais", pools: "ais", price_baht_month: null };
+  assert.equal(validRow(ais), true);
+  assert.equal(rowKey(ais), `ais:${row.msisdn}`);
+  assert.equal(validRow({ ...ais, provider: "true" }), false);
+  assert.doesNotThrow(() => validateSnapshot([row, ais], { ...meta, count: 2, providerCounts: { true: 1, ais: 1 } }));
 });
 test("snapshot requires valid, nonempty, unique rows matching metadata", () => {
   assert.equal(validateSnapshot([row], meta)[0], row);

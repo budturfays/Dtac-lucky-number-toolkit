@@ -1,5 +1,5 @@
 import unittest
-from fetch_and_export import parse_numbering, ensure_pool_health, score_breakdown
+from fetch_and_export import parse_numbering, parse_ais_response, ensure_pool_health, score_breakdown
 
 
 class ExportSafetyTests(unittest.TestCase):
@@ -29,6 +29,14 @@ class ExportSafetyTests(unittest.TestCase):
                 ensure_pool_health("universal", succeeded, 10)
         ensure_pool_health("universal", 8, 10)
 
+    def test_ais_response_requires_valid_numbers(self):
+        rows, total = parse_ais_response({"total_count": 1, "mobile": [{"mobile_no": "0659389235"}]})
+        self.assertEqual(total, 1)
+        self.assertEqual(rows[0]["mobile_no"], "0659389235")
+        for response in ({}, {"total_count": 1},
+                         {"total_count": 1, "mobile": [{"mobile_no": "bad"}]}):
+            with self.assertRaises(ValueError):
+                parse_ais_response(response)
     def test_score_breakdown_keeps_supported_categories(self):
         self.assertEqual(score_breakdown([
             {"name": "การงาน", "star": 5},

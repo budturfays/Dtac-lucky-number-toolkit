@@ -21,6 +21,7 @@ class CsvExportTests(unittest.TestCase):
             with open(os.path.join(data_dir, "meta.json"), encoding="utf-8") as f:
                 meta = json.load(f)
             self.assertEqual(meta["count"], len(rows))
+            self.assertEqual(meta["providerCounts"], {"true": 1, "ais": 0})
             self.assertEqual(rows[0]["pools"], "universal")
             self.assertEqual(exporter.datetime.fromisoformat(meta["lastmod"]).timestamp(), 1700000000)
 
