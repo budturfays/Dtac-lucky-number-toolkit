@@ -40,16 +40,21 @@ class ExportSafetyTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 parse_ais_response(response)
 
-    def test_ais_pages_are_merged_completely(self):
-        pages = {
-            1: {"total_count": 3, "mobile": [{"mobile_no": "0650000001"}]},
-            2: {"total_count": 3, "mobile": [
-                {"mobile_no": "0650000002"}, {"mobile_no": "0650000003"}]},
-        }
-        with patch.object(exporter, "AIS_PAGE_SIZE", 2), \
-             patch.object(exporter, "fetch_ais_page", side_effect=lambda page: pages[page]):
+    def test_ais_atomic_catalog_is_complete(self):
+        response = {"total_count": 3, "mobile": [
+            {"mobile_no": "0650000001"}, {"mobile_no": "0650000002"},
+            {"mobile_no": "0650000003"}]}
+        with patch.object(exporter, "fetch_ais_page", return_value=response):
             rows = exporter.fetch_all_ais_once()
         self.assertEqual(set(rows), {"0650000001", "0650000002", "0650000003"})
+
+    def test_ais_atomic_catalog_rejects_partial_or_duplicate_data(self):
+        for mobile in ([{"mobile_no": "0650000001"}],
+                       [{"mobile_no": "0650000001"}, {"mobile_no": "0650000001"}]):
+            with patch.object(exporter, "fetch_ais_page",
+                              return_value={"total_count": 2, "mobile": mobile}):
+                with self.assertRaises(RuntimeError):
+                    exporter.fetch_all_ais_once()
     def test_score_breakdown_keeps_supported_categories(self):
         self.assertEqual(score_breakdown([
             {"name": "การงาน", "star": 5},
