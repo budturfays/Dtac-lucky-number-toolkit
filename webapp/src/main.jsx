@@ -5,9 +5,9 @@ import { validRow, validateSnapshot, mergeCatalog, parseFavorites, fetchJson, ra
 import { TrueHandoff } from "./TrueHandoff.js";
 
 // ── SEO (runtime metadata; static tags live in index.html) ────────────────
-const SEO_TITLE = "หาเบอร์มงคล – ค้นหาเบอร์สวยและเบอร์มงคล";
+const SEO_TITLE = "หาเบอร์มงคลฟรี ซื้อตรงจากเครือข่าย | AIS ทรู ดีแทค";
 const SEO_DESCRIPTION =
-  "ค้นหาเบอร์มงคลและเบอร์สวยจาก AIS ทรู และดีแทค วิเคราะห์เลขมงคล เบอร์ตอง เบอร์ 4 ตัวท้าย อัปเดตเป็นรอบ";
+  "ค้นหาเบอร์มงคลฟรีจาก AIS ทรู และดีแทค แล้วซื้อโดยตรงกับเครือข่าย ไม่ผ่านนายหน้า วิเคราะห์รูปแบบและตรวจสอบสถานะก่อนซื้อ";
 
 function setMeta(name, content) {
   let el = document.head.querySelector(`meta[name="${name}"]`);
@@ -513,7 +513,7 @@ function App() {
           <div>
             <span className="eyebrow">คลังเบอร์ AIS · ทรู · ดีแทค</span>
             <h1>หาเบอร์มงคล</h1>
-            <span className="sub">คัดเบอร์จากรูปแบบ เลขท้าย และงบรายเดือน</span>
+            <span className="sub">ค้นหาได้ฟรี · ซื้อตรงจากเครือข่าย ไม่ผ่านนายหน้า</span>
           </div>
         </div>
         <button className="coffee" onClick={() => setCoffeeOpen(true)} title="เลี้ยงกาแฟ">สนับสนุนเว็บไซต์</button>
