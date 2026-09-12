@@ -1,4 +1,6 @@
 import unittest
+from unittest.mock import patch
+import fetch_and_export as exporter
 from fetch_and_export import parse_numbering, parse_ais_response, ensure_pool_health, score_breakdown
 
 
@@ -37,6 +39,17 @@ class ExportSafetyTests(unittest.TestCase):
                          {"total_count": 1, "mobile": [{"mobile_no": "bad"}]}):
             with self.assertRaises(ValueError):
                 parse_ais_response(response)
+
+    def test_ais_pages_are_merged_completely(self):
+        pages = {
+            1: {"total_count": 3, "mobile": [{"mobile_no": "0650000001"}]},
+            2: {"total_count": 3, "mobile": [
+                {"mobile_no": "0650000002"}, {"mobile_no": "0650000003"}]},
+        }
+        with patch.object(exporter, "AIS_PAGE_SIZE", 2), \
+             patch.object(exporter, "fetch_ais_page", side_effect=lambda page: pages[page]):
+            rows = exporter.fetch_all_ais_once()
+        self.assertEqual(set(rows), {"0650000001", "0650000002", "0650000003"})
     def test_score_breakdown_keeps_supported_categories(self):
         self.assertEqual(score_breakdown([
             {"name": "การงาน", "star": 5},
