@@ -297,6 +297,18 @@ tbody tr:hover { background: rgba(201,154,91,.035); }
 }
 .price { color: #d5d8dc; font-variant-numeric: tabular-nums; }
 .price span { color: #686f78; font-size: 10px; }
+.provider-badge {
+  display: inline-flex;
+  padding: 4px 8px;
+  border: 1px solid #424852;
+  border-radius: 999px;
+  color: #abb2ba;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+.provider-badge.ais { border-color: #587b72; background: rgba(91, 180, 151, .08); color: #9dd7c4; }
+.provider-badge.true { border-color: #57466e; background: rgba(143, 101, 185, .08); color: #c3a8df; }
 .runs { color: #a8916f; font-family: "IBM Plex Mono", monospace; font-size: 12px; }
 .score { color: #8e969e; font-family: "IBM Plex Mono", monospace; }
 .buy {

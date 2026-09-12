@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import check from "../api/check.js";
 import refresh from "../api/refresh.js";
 import { parseNumbering } from "../lib/true-api.js";
+import { parseAisProducts } from "../lib/ais-api.js";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -37,13 +38,28 @@ test("invalid input is rejected before upstream", async () => {
   let calls = 0;
   globalThis.fetch = () => { calls++; throw new Error("unexpected call"); };
   for (const invalid of [null, [], "{", "null", { ...body, msisdn: 803655552 },
-    { ...body, msisdn: "08036555520" }, { ...body, pool: "invalid" }]) {
+    { ...body, msisdn: "08036555520" }, { ...body, pool: "invalid" },
+    { ...body, provider: "invalid" }]) {
     assert.equal((await invoke(check, invalid)).statusCode, 400);
   }
   for (const size of [0, -1, 201, 1.5, "5", null, true]) {
     assert.equal((await invoke(refresh, { pool: "universal", size })).statusCode, 400);
   }
   assert.equal(calls, 0);
+});
+test("AIS exact lookup uses the public catalog and does not require a True pool", async () => {
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "https://croissant.ais.th/external/app/lucky/products");
+    const sent = JSON.parse(options.body);
+    assert.equal(sent.variables.filter.mobile_no.like, msisdn);
+    assert.equal(sent.variables.pageSize, 5);
+    return { ok: true, json: async () => ({ total_count: 1, mobile: [{ mobile_no: msisdn }] }) };
+  };
+  const res = await invoke(check, { msisdn, provider: "ais" });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.available, true);
+  assert.equal(res.payload.provider, "ais");
+  assert.equal(res.payload.pool, null);
 });
 test("exact lookup uses all nine positions and only product-list, never reserve", async () => {
   globalThis.fetch = async (url, options) => {
@@ -109,4 +125,11 @@ test("refresh uses bounded default and explicit size with fresh sessions", async
 });
 test("missing numbering with zero total is still malformed", () => {
   assert.throws(() => parseNumbering({ statusCode: 200, data: { pagination: { totalItem: 0 } } }));
+});
+test("malformed AIS responses stay unknown", () => {
+  assert.deepEqual(parseAisProducts({ total_count: 0, mobile: [] }), []);
+  for (const data of [{}, { total_count: 1, mobile: [] },
+    { total_count: 1, mobile: [{ mobile_no: "bad" }] }]) {
+    assert.throws(() => parseAisProducts(data));
+  }
 });

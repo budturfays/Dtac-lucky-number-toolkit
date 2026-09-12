@@ -19,3 +19,10 @@ test("stale checks cannot disable or replace the navigation link", () => {
   assert.equal(link.props.onClick, undefined);
   assert.equal(link.props.disabled, undefined);
 });
+test("handoff label supports AIS without intercepting navigation", () => {
+  const aisUrl = "https://www.ais.th/find-number?mobile_no_like=0803655552";
+  const link = TrueHandoff({ url: aisUrl, label: "ไปที่ AIS" });
+  assert.equal(link.props.href, aisUrl);
+  assert.equal(link.props.children, "ไปที่ AIS");
+  assert.equal(link.props.onClick, undefined);
+});

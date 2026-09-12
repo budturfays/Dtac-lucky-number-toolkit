@@ -1,5 +1,5 @@
 """
-fetch_and_export.py — fetch fresh lucky numbers from True's API and export
+fetch_and_export.py — fetch fresh lucky numbers from True and AIS and export
 to webapp/public/data/numbers.json for the web app.
 
 Used by the GitHub Actions workflow (Refresh lucky numbers) so the site
@@ -19,10 +19,15 @@ import os
 import math
 import re
 import urllib.request
+import urllib.error
+import time
 import uuid
 from datetime import datetime
 
 BASE = "https://store.true.th/api"
+AIS_BASE = "https://croissant.ais.th/external/app/lucky/products"
+AIS_SOURCE = "https://www.ais.th/consumers/package/exclusive-plan/lucky-number/find-number"
+AIS_PAGE_SIZE = 100
 POOLS = ["universal", "rahu", "khanthep", "naga", "ajchang", "emperor"]
 # default draws per pool (moderate; the API returns random samples, so each
 # refresh adds a fresh random sample on top of the previous snapshot)
@@ -56,6 +61,72 @@ def draw(pool, size=200):
     with urllib.request.urlopen(req, timeout=30) as r:
         resp = json.loads(r.read().decode())
     return parse_numbering(resp)
+
+
+def ais_body(page):
+    return {"variables": {"filter": {
+        "type_of_product": {"eq": "mobile"},
+        "mobile_no": {"like": "0%%%%%%%%%"},
+        "prefered_number": {"in": []}, "unwanted_number": {"in": []},
+        "fortune_teller": {"eq": None}, "birthday": {"eq": ""},
+        "prediction_type": {"in": []}, "letter_grade": None,
+        "aggregate_score": None,
+    }, "pageSize": AIS_PAGE_SIZE, "currentPage": page}}
+
+
+def parse_ais_response(resp):
+    if not isinstance(resp, dict) or not isinstance(resp.get("total_count"), int) or resp["total_count"] < 0:
+        raise ValueError("unexpected AIS response")
+    mobile = resp.get("mobile")
+    if not isinstance(mobile, list):
+        raise ValueError("missing AIS mobile list")
+    for item in mobile:
+        if not isinstance(item, dict) or not re.fullmatch(r"0\d{9}", str(item.get("mobile_no", ""))):
+            raise ValueError("invalid AIS number")
+    return mobile, resp["total_count"]
+
+
+def fetch_ais_page(page):
+    req = urllib.request.Request(
+        AIS_BASE, data=json.dumps(ais_body(page)).encode(), method="POST",
+        headers={"Content-Type": "application/json", "Accept": "application/json",
+                 "User-Agent": "Mozilla/5.0", "Origin": "https://www.ais.th",
+                 "Referer": AIS_SOURCE},
+    )
+    last_error = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                return json.loads(response.read().decode())
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+            last_error = error
+            if attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
+    raise RuntimeError("AIS catalog request failed") from last_error
+
+
+def fetch_all_ais():
+    first = fetch_ais_page(1)
+    first_rows, total = parse_ais_response(first)
+    if total <= 0:
+        raise RuntimeError("AIS returned an empty catalog; refusing partial deployment")
+    pages = max(1, math.ceil(total / AIS_PAGE_SIZE))
+    merged = {item["mobile_no"]: item for item in first_rows}
+    print(f"  AIS: page 1/{pages}, {len(merged)}/{total} unique", flush=True)
+    for page in range(2, pages + 1):
+        response = fetch_ais_page(page)
+        items, page_total = parse_ais_response(response)
+        if page_total != total:
+            raise RuntimeError("AIS total changed during export; refusing inconsistent snapshot")
+        before = len(merged)
+        for item in items:
+            merged.setdefault(item["mobile_no"], item)
+        if len(merged) == before:
+            raise RuntimeError(f"AIS page {page} repeated earlier data")
+        print(f"  AIS: page {page}/{pages}, {len(merged)}/{total} unique", flush=True)
+    if len(merged) != total:
+        raise RuntimeError(f"AIS catalog incomplete: got {len(merged)} of {total}")
+    return merged
 
 
 def parse_numbering(resp):
@@ -162,10 +233,30 @@ def main():
             "msisdn": msisdn,
             "price_baht_month": int(d0.get("rc") or 0),
             "pools": pool,
+            "provider": "true",
             "stars": star_sum(json.dumps(it.get("luckyType", []), ensure_ascii=False)),
             "scores": score_breakdown(lucky_types),
         })
-    rows.sort(key=lambda r: r["msisdn"])
+    ais_rows = fetch_all_ais()
+    for msisdn, item in ais_rows.items():
+        forecast = item.get("forcast") if isinstance(item.get("forcast"), dict) else {}
+        scores = {name: forecast.get(source) for name, source in
+                  (("work", "work"), ("finance", "finance"),
+                   ("love", "adoration"), ("health", "health"))
+                  if isinstance(forecast.get(source), (int, float))}
+        aggregate = forecast.get("aggregate")
+        rows.append({
+            "msisdn": msisdn,
+            # AIS's returned product price is not a monthly plan fee.
+            "price_baht_month": None,
+            "pools": "ais",
+            "provider": "ais",
+            "stars": aggregate if isinstance(aggregate, (int, float)) else 0,
+            "scores": scores,
+            "grade": forecast.get("grade"),
+            "lucky_type": item.get("lucky_type"),
+        })
+    rows.sort(key=lambda r: (r["msisdn"], r["provider"]))
     if not rows:
         raise RuntimeError("empty catalog; refusing to overwrite or deploy")
 
@@ -183,7 +274,8 @@ def main():
     lastmod = datetime.fromtimestamp(os.path.getmtime(out)).astimezone()
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(
-            {"lastmod": lastmod.isoformat(timespec="seconds"), "count": len(rows)},
+            {"lastmod": lastmod.isoformat(timespec="seconds"), "count": len(rows),
+             "providerCounts": {"true": len(merged), "ais": len(ais_rows)}},
             f, separators=(",", ":"),
         )
     print(f"Wrote meta -> {meta_path} (lastmod={lastmod.isoformat(timespec='seconds')})")

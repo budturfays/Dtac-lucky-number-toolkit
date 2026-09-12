@@ -31,7 +31,11 @@ for (const route of ["/api/check", "/api/refresh"]) {
 const [dataRes, metaRes] = await Promise.all([request("/data/numbers.json"), request("/data/meta.json")]);
 assert.equal(dataRes.status, 200);
 assert.equal(metaRes.status, 200);
-const rows = validateSnapshot(await dataRes.json(), await metaRes.json());
+const meta = await metaRes.json();
+const rows = validateSnapshot(await dataRes.json(), meta);
+assert.ok(meta.providerCounts?.true > 0);
+assert.ok(meta.providerCounts?.ais > 0);
+assert.equal(rows.filter(row => row.provider === "ais").length, meta.providerCounts.ais);
 const sample = await request("/api/refresh", { pool: "universal", size: 1 });
 assert.equal(sample.status, 200);
 const fresh = await sample.json();
@@ -43,5 +47,16 @@ const result = await checked.json();
 assert.equal(result.ok, true);
 assert.equal(result.msisdn, msisdn);
 assert.equal(typeof result.available, "boolean");
-console.log(JSON.stringify({ catalogCount: rows.length, checked: msisdn, available: result.available }));
+const aisRow = rows.find(row => row.provider === "ais");
+assert.ok(aisRow);
+const aisChecked = await request("/api/check", { provider: "ais", msisdn: aisRow.msisdn });
+assert.equal(aisChecked.status, 200);
+const aisResult = await aisChecked.json();
+assert.equal(aisResult.ok, true);
+assert.equal(aisResult.msisdn, aisRow.msisdn);
+assert.equal(aisResult.provider, "ais");
+assert.equal(typeof aisResult.available, "boolean");
+console.log(JSON.stringify({ catalogCount: rows.length, providerCounts: meta.providerCounts,
+  trueChecked: msisdn, trueAvailable: result.available,
+  aisChecked: aisRow.msisdn, aisAvailable: aisResult.available }));
 
