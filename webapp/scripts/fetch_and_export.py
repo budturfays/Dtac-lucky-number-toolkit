@@ -28,6 +28,7 @@ BASE = "https://store.true.th/api"
 AIS_BASE = "https://croissant.ais.th/external/app/lucky/products"
 AIS_SOURCE = "https://www.ais.th/consumers/package/exclusive-plan/lucky-number/find-number"
 AIS_PAGE_SIZE = 100
+AIS_WORKERS = 8
 POOLS = ["universal", "rahu", "khanthep", "naga", "ajchang", "emperor"]
 # default draws per pool (moderate; the API returns random samples, so each
 # refresh adds a fresh random sample on top of the previous snapshot)
@@ -105,7 +106,7 @@ def fetch_ais_page(page):
     raise RuntimeError("AIS catalog request failed") from last_error
 
 
-def fetch_all_ais():
+def fetch_all_ais_once():
     first = fetch_ais_page(1)
     first_rows, total = parse_ais_response(first)
     if total <= 0:
@@ -113,8 +114,13 @@ def fetch_all_ais():
     pages = max(1, math.ceil(total / AIS_PAGE_SIZE))
     merged = {item["mobile_no"]: item for item in first_rows}
     print(f"  AIS: page 1/{pages}, {len(merged)}/{total} unique", flush=True)
+    responses = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=AIS_WORKERS) as executor:
+        futures = {executor.submit(fetch_ais_page, page): page for page in range(2, pages + 1)}
+        for future in concurrent.futures.as_completed(futures):
+            responses[futures[future]] = future.result()
     for page in range(2, pages + 1):
-        response = fetch_ais_page(page)
+        response = responses[page]
         items, page_total = parse_ais_response(response)
         if page_total != total:
             raise RuntimeError("AIS total changed during export; refusing inconsistent snapshot")
@@ -123,10 +129,24 @@ def fetch_all_ais():
             merged.setdefault(item["mobile_no"], item)
         if len(merged) == before:
             raise RuntimeError(f"AIS page {page} repeated earlier data")
-        print(f"  AIS: page {page}/{pages}, {len(merged)}/{total} unique", flush=True)
+        if page % 5 == 0 or page == pages:
+            print(f"  AIS: page {page}/{pages}, {len(merged)}/{total} unique", flush=True)
     if len(merged) != total:
         raise RuntimeError(f"AIS catalog incomplete: got {len(merged)} of {total}")
     return merged
+
+
+def fetch_all_ais():
+    last_error = None
+    for attempt in range(2):
+        try:
+            return fetch_all_ais_once()
+        except (RuntimeError, ValueError) as error:
+            last_error = error
+            if attempt == 0:
+                print(f"  AIS catalog changed during fetch; retrying once ({error})", flush=True)
+                time.sleep(2)
+    raise last_error
 
 
 def parse_numbering(resp):
