@@ -83,6 +83,13 @@ button:disabled { opacity: .48; cursor: wait; transform: none; }
   font-size: 10px;
   white-space: nowrap;
 }
+.rarity-note {
+  display: block;
+  margin-top: 3px;
+  color: var(--copper);
+  font-size: 10px;
+  white-space: nowrap;
+}
 .eyebrow, .section-index {
   color: var(--copper);
   font-family: "IBM Plex Mono", monospace;
