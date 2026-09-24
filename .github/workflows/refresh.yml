@@ -17,21 +17,23 @@ concurrency:
 
 jobs:
   refresh:
-    runs-on: ubuntu-latest
+    # Pin the image so the scheduled job is not changed by the Ubuntu 26
+    # migration announced for ubuntu-latest.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
         working-directory: webapp
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
           cache-dependency-path: webapp/package-lock.json
 
@@ -97,6 +99,25 @@ jobs:
         env:
           VERCEL_ORG_ID: team_nRdGzntRZAxuwv1ZxDUybLd3
           VERCEL_PROJECT_ID: prj_TXjIz88GHbYRw85KSKtaX3vdLzVA
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_BIN: npx --yes vercel@58
+
+      # The buy API is a separate Vercel project. Keep its deployment explicit
+      # and guarded so a webapp deploy can never clobber it, while ensuring the
+      # endpoint checked below is actually present after a fresh checkout.
+      - name: Pull Vercel buy project settings
+        working-directory: vercel-fn
+        run: npx --yes vercel@58 pull --yes --environment production
+        env:
+          VERCEL_ORG_ID: team_nRdGzntRZAxuwv1ZxDUybLd3
+          VERCEL_PROJECT_ID: prj_DTqOVC4UCMSLDXQmuV1IEvPCE8Fn
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy buy API to Vercel (production, guarded)
+        run: python ../deploy_guard.py vercel-fn
+        env:
+          VERCEL_ORG_ID: team_nRdGzntRZAxuwv1ZxDUybLd3
+          VERCEL_PROJECT_ID: prj_DTqOVC4UCMSLDXQmuV1IEvPCE8Fn
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_BIN: npx --yes vercel@58
 
