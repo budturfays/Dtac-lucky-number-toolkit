@@ -102,28 +102,9 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_BIN: npx --yes vercel@58
 
-      # The buy API is a separate Vercel project. Keep its deployment explicit
-      # and guarded so a webapp deploy can never clobber it, while ensuring the
-      # endpoint checked below is actually present after a fresh checkout.
-      - name: Pull Vercel buy project settings
-        working-directory: vercel-fn
-        run: npx --yes vercel@58 pull --yes --environment production
-        env:
-          VERCEL_ORG_ID: team_nRdGzntRZAxuwv1ZxDUybLd3
-          VERCEL_PROJECT_ID: prj_DTqOVC4UCMSLDXQmuV1IEvPCE8Fn
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-
-      - name: Deploy buy API to Vercel (production, guarded)
-        run: python ../deploy_guard.py vercel-fn
-        env:
-          VERCEL_ORG_ID: team_nRdGzntRZAxuwv1ZxDUybLd3
-          VERCEL_PROJECT_ID: prj_DTqOVC4UCMSLDXQmuV1IEvPCE8Fn
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_BIN: npx --yes vercel@58
-
-      # 5) Post-deploy health checks — fail the run loudly if the site or the
-      #    buy function isn't serving correctly (e.g. a stray deploy clobbered
-      #    /api/buy with a static-only build).
+      # 5) Post-deploy health checks. The web app uses read-only provider
+      #    handoff links; the old separate buy project is no longer part of
+      #    the deployed product and is intentionally not a release gate.
       - name: Health-check site
         run: |
           code=$(curl -s -o /tmp/site.html -w "%{http_code}" \
@@ -131,15 +112,6 @@ jobs:
           echo "site status: $code"
           [ "$code" = "200" ] || { echo "SITE FAILED"; exit 1; }
           grep -q 'id="root"' /tmp/site.html || { echo "SITE MISSING ROOT"; exit 1; }
-
-      - name: Health-check buy function
-        run: |
-          body=$(curl -s -w "\n%{http_code}" \
-            https://lucky-number-buy.vercel.app/api/buy)
-          code=$(echo "$body" | tail -n1)
-          echo "buy fn status: $code"
-          echo "$body" | grep -q '"ok":true' || { echo "BUY FN FAILED"; exit 1; }
-          [ "$code" = "200" ] || { echo "BUY FN FAILED"; exit 1; }
 
       - name: Read-only production API and catalog checks
         run: node scripts/production-smoke.mjs
