@@ -86,27 +86,36 @@ def parse_ais_response(resp):
     return mobile, resp["total_count"]
 
 
-def fetch_ais_page(page):
+def fetch_ais_page(page, refresh_url=None):
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    if not refresh_url:
+        headers.update({"User-Agent": "Mozilla/5.0", "Origin": "https://www.ais.th",
+                        "Referer": AIS_SOURCE})
     req = urllib.request.Request(
-        AIS_BASE, data=json.dumps(ais_body(page)).encode(), method="POST",
-        headers={"Content-Type": "application/json", "Accept": "application/json",
-                 "User-Agent": "Mozilla/5.0", "Origin": "https://www.ais.th",
-                 "Referer": AIS_SOURCE},
+        refresh_url or AIS_BASE,
+        data=json.dumps({} if refresh_url else ais_body(page)).encode(),
+        method="POST", headers=headers,
     )
     last_error = None
     for attempt in range(3):
         try:
             with urllib.request.urlopen(req, timeout=30) as response:
-                return json.loads(response.read().decode())
+                payload = json.load(response)
+            if refresh_url:
+                if (not isinstance(payload, dict) or payload.get("ok") is not True or
+                        payload.get("provider") != "ais"):
+                    raise ValueError("unexpected AIS refresh response")
+                return {"mobile": payload.get("mobile"), "total_count": payload.get("total")}
+            return payload
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
             last_error = error
             if attempt < 2:
                 time.sleep(1.5 * (attempt + 1))
-    raise RuntimeError("AIS catalog request failed") from last_error
+    raise RuntimeError(f"AIS catalog request failed: {last_error}") from last_error
 
 
-def fetch_all_ais_once():
-    response = fetch_ais_page(1)
+def fetch_all_ais_once(refresh_url=None):
+    response = fetch_ais_page(1, refresh_url)
     rows, total = parse_ais_response(response)
     if total <= 0:
         raise RuntimeError("AIS returned an empty catalog; refusing partial deployment")
@@ -117,15 +126,15 @@ def fetch_all_ais_once():
     return merged
 
 
-def fetch_all_ais():
+def fetch_all_ais(refresh_url=None):
     last_error = None
     for attempt in range(2):
         try:
-            return fetch_all_ais_once()
+            return fetch_all_ais_once(refresh_url)
         except (RuntimeError, ValueError) as error:
             last_error = error
             if attempt == 0:
-                print(f"  AIS catalog response was incomplete; retrying once ({error})", flush=True)
+                print(f"  AIS catalog refresh failed; retrying once ({error})", flush=True)
                 time.sleep(2)
     raise last_error
 
@@ -188,6 +197,7 @@ def main():
     ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
                     help="concurrent draw threads (default %d)" % DEFAULT_WORKERS)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--ais-refresh-url", help="fetch AIS via the web app's read-only refresh API")
     args = ap.parse_args()
     if args.draws < 0 or not 1 <= args.workers <= 16:
         ap.error("draws must be nonnegative and workers must be 1..16")
@@ -238,7 +248,7 @@ def main():
             "stars": star_sum(json.dumps(it.get("luckyType", []), ensure_ascii=False)),
             "scores": score_breakdown(lucky_types),
         })
-    ais_rows = fetch_all_ais()
+    ais_rows = fetch_all_ais(args.ais_refresh_url)
     for msisdn, item in ais_rows.items():
         forecast = item.get("forcast") if isinstance(item.get("forcast"), dict) else {}
         scores = {name: forecast.get(source) for name, source in
