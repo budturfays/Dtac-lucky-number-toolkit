@@ -38,10 +38,11 @@ jobs:
           cache-dependency-path: webapp/package-lock.json
 
       # 1) Fetch True-dtac samples plus the complete AIS public listing
+      # The production AIS API reads the provider live, independent of the snapshot.
       - name: Fetch fresh data
         run: |
           python -m pip install --quiet -r requirements.txt
-          python scripts/fetch_and_export.py
+          python scripts/fetch_and_export.py --ais-refresh-url https://lucky-number-web-lac.vercel.app/api/refresh-ais
 
       # 2) Install dependencies
       - name: Install dependencies

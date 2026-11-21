@@ -1,3 +1,5 @@
+import io
+import json
 import unittest
 from unittest.mock import patch
 import fetch_and_export as exporter
@@ -55,6 +57,29 @@ class ExportSafetyTests(unittest.TestCase):
                               return_value={"total_count": 2, "mobile": mobile}):
                 with self.assertRaises(RuntimeError):
                     exporter.fetch_all_ais_once()
+
+    def test_ais_refresh_api_requires_a_complete_catalog(self):
+        url = "https://example.test/api/refresh-ais"
+        payload = {"ok": True, "provider": "ais", "total": 1,
+                   "mobile": [{"mobile_no": "0650000001"}]}
+        with patch.object(exporter.urllib.request, "urlopen",
+                          return_value=io.BytesIO(json.dumps(payload).encode())) as urlopen:
+            self.assertEqual(set(exporter.fetch_all_ais_once(url)), {"0650000001"})
+            request = urlopen.call_args.args[0]
+            self.assertEqual(request.full_url, url)
+            self.assertEqual(request.get_method(), "POST")
+            self.assertEqual(json.loads(request.data), {})
+
+        for changes, error in (({"total": 2}, RuntimeError),
+                               ({"provider": "true"}, ValueError),
+                               ({"ok": False}, ValueError)):
+            with self.subTest(changes=changes), patch.object(
+                exporter.urllib.request, "urlopen",
+                return_value=io.BytesIO(json.dumps(payload | changes).encode()),
+            ):
+                with self.assertRaises(error):
+                    exporter.fetch_all_ais_once(url)
+
     def test_score_breakdown_keeps_supported_categories(self):
         self.assertEqual(score_breakdown([
             {"name": "การงาน", "star": 5},
